@@ -1,0 +1,27 @@
+(use* core)
+(use* varvara)
+
+(use std)
+(use net)
+
+(word main (--) [
+	(let recv @[U8 1256s])
+	(let conn net/ConnectArgs)
+	"geminiprotocol.net" @conn :host <-
+	1965s @conn :port <-
+	
+	@conn .Net/connect deo
+	"gemini://geminiprotocol.net/\r\n"
+		dup std/strlen .Net/length deo
+		.Net/send deo
+	"sent\n" print-string
+
+	1256s .Net/length deo
+	@recv dbg .Net/recv deo
+		"results:\n" print-string
+		@recv print-string
+
+	@recv dbg .Net/recv deo
+		"results:\n" print-string
+		@recv print-string
+])
