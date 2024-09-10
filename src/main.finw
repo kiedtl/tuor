@@ -2,26 +2,81 @@
 (use* varvara)
 
 (use std)
+(use alloc)
+(use vec)
 (use net)
 
+(use src/assets)
+
 (word main (--) [
-	(let recv @[U8 1256s])
+	alloc/init
+
 	(let conn net/ConnectArgs)
 	"geminiprotocol.net" @conn :host <-
 	1965s @conn :port <-
-	
 	@conn .Net/connect deo
+	.Net/status dei "connection status: " print-string (as I8) print-dec nl
+
 	"gemini://geminiprotocol.net/\r\n"
 		dup std/strlen .Net/length deo
 		.Net/send deo
-	"sent\n" print-string
+	.Net/status dei (as I8) "send status: " print-string print-dec nl
 
-	1256s .Net/length deo
-	@recv dbg .Net/recv deo
-		"results:\n" print-string
-		@recv print-string
+	(let buf (Of vec/Vector U8))
+	4096s @buf ;init-sized
 
-	@recv dbg .Net/recv deo
-		"results:\n" print-string
-		@recv print-string
+	(let tmpbuf [U8 4096s]) // TODO: optimize, append to buf directly
+	@tmpbuf "tmpbuf-ptr: " print-string print nl
+
+	.Net/status dei
+	(until [ .Status/ok <> ] [
+		drop
+
+		4096s .Net/length deo // Need (len) builtin?
+		@tmpbuf .Net/recv deo
+		.Net/length dei
+			dup @buf ;ensure-capacity
+			// TODO: add append-slice (append-chunk?) to std
+			dup
+				@buf :len -> @buf :items -> :
+					@tmpbuf swap dbg std/memcpy drop
+				@buf :len tuck -> + swap <-
+
+		.Net/status dei
+	])
+	drop
+
+	"received: " print-string
+		@buf :items -> print-string nl
+])
+
+(word set-glyph-addr (U8 -- ) [
+	32 - @FONT : .Screen/addr deo
+])
+
+(word draw-char (U8 -- ) [
+	set-glyph-addr
+	0x04 .Screen/sprite deo
+])
+
+(word draw-char-inverse (U8 -- ) [
+	set-glyph-addr
+	0x01 .Screen/sprite deo
+])
+
+(word draw-mouse ( -- ) [
+	(let oldx U16)
+	(let oldy U16)
+
+	0x0 .Screen/auto deo
+
+	$oldx .Screen/x deo
+	$oldy .Screen/y deo
+	@MOUSE .Screen/addr deo
+	0x40 .Screen/sprite deo
+
+	.Mouse/x dei dup @oldx <- .Screen/x deo
+	.Mouse/y dei dup @oldy <- .Screen/y deo
+
+	0x41 .Screen/sprite deo
 ])
