@@ -1,0 +1,8 @@
+(struct Sprite8 [data [U8 8]])
+
+// Taken from left
+(let MOUSE Sprite8 [
+	0x80c0s 0xe0f0s 0xf8e0s 0x1000s
+])
+
+(let FONT [Sprite8] (embed "../assets/atari8.uf1"))
