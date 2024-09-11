@@ -68,8 +68,14 @@
 	0s .Screen/x deo
 	0s .Screen/y deo
 
+	(let last-space @[U8])
+	(let last-space-screenx U16)
+	@buf :items -> @last-space <-
+	0s @last-space-screenx <-
+
 	(word next-line (--) [
 		0s .Screen/x deo
+		0s @last-space-screenx <-
 		.Screen/y dei 12s + .Screen/y deo
 	])
 
@@ -77,7 +83,43 @@
 	ldak
 	(while [ 0<> ] [
 		.Screen/width dei 8s - .Screen/x dei <
-			(when [ next-line ])
+			(when [
+				$last-space
+
+				// Ensure last whitespace wasn't beginning
+				// of string
+				dup @buf :items -> <>
+				(when  [
+					// Move past the actual space
+					//
+					// FIXME: handle multiple spaces in a row
+					1+
+
+					.Screen/x dei
+					$last-space-screenx
+					(while [ (U16 U16 -- Bool) <> ] [
+						dup .Screen/x deo
+						0x20 draw-char
+						8s +
+					]) 2drop
+					rot-sbs drop
+					swap-bs
+				] [
+					// It's the beginning... nevermind!
+					drop
+				])
+
+				next-line
+
+				// TODO: continue
+				drop ldak
+			])
+
+		// Record if the current char is whitespace
+		dup is-whitespace (when [
+			over-sb @last-space <-
+			.Screen/x dei @last-space-screenx <-
+		])
 
 		// TODO: allow '\n' and '\t' literal
 		(cond
@@ -89,6 +131,18 @@
 		1+ ldak
 	])
 	2drop
+])
+
+// TODO: optimize when cond bodies are the same
+// TODO: (or) builtin
+(word is-whitespace (Char8 -- Bool) [
+	(cond
+		[ 0x0A = ] [ t ]
+		[ 0x09 = ] [ t ]
+		[ 0x20 = ] [ t ]
+		[ nil ]
+	)
+	nip
 ])
 
 (word set-glyph-addr (U8 -- ) [
