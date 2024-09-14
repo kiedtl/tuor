@@ -13,52 +13,56 @@
 	[ ( -- ) halt ] .Screen/vector deo
 	[ (--) on-mouse halt ] .Mouse/vector deo
 
+	alloc/init
+	2048s @buf ;init-sized
+
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
 	0xf0c0s .System/b deo
 	100s 8s * .Screen/width deo
 	70s 8s * .Screen/height deo
 
-	alloc/init
-
-	(let conn net/ConnectArgs)
-	"geminiprotocol.net" @conn :host <-
-	1965s @conn :port <-
-	@conn .Net/connect deo
-	.Net/status dei "connection status: " print-string (as I8) print-dec nl
-
-	"gemini://geminiprotocol.net/\r\n"
-		dup std/strlen .Net/length deo
-		.Net/send deo
-	.Net/status dei (as I8) "send status: " print-string print-dec nl
-
-	4096s @buf ;init-sized
-
-	(let tmpbuf [U8 4096s]) // TODO: optimize, append to buf directly
-
-	.Net/status dei
-	(until [ .Status/ok <> ] [
-		drop
-
-		4096s .Net/length deo // Need (len) builtin?
-		@tmpbuf .Net/recv deo
-		.Net/length dei
-			dup @buf ;ensure-capacity
-			// TODO: add append-slice (append-chunk?) to std
-			dup
-				@buf :len -> @buf :items -> :
-					@tmpbuf swap std/memcpy drop
-				@buf :len tuck -> + swap <-
-
-		.Net/status dei
-	])
-	drop
+	"gemini://geminiprotocol.net/" "geminiprotocol.net"
+		make-request
 
 	draw
 ])
 
-// ( host url -- )
+// ( url host -- )
 (word make-request (@U8 @U8 -- ) [
+	(let conn net/ConnectArgs)
+	@conn :host <-
+	1965s @conn :port <-
+	@conn .Net/connect deo
+
+	.Net/status dei .Status/ok <> (when [
+		drop
+		"Connection failed!" print-string nl
+		"Error code: " print-string
+			.Net/status dei (as I8) print-dec
+			nl
+		return
+	])
+
+	dup std/strlen .Net/length deo
+		.Net/send deo
+	2s .Net/length deo
+		"\r\n" .Net/send deo
+
+	.Net/status dei .Status/ok <> (when [
+		"Request failed!" print-string nl
+		"Error code: " print-string
+			.Net/status dei (as I8) print-dec
+			nl
+		return
+	])
+
+	(until [ ( -- Bool) .Net/status dei .Status/ok <> ] [
+		@buf :len -> 256s + @buf ;ensure-capacity
+		256s .Net/length deo
+		@buf :len -> @buf :items -> + .Net/recv deo
+		.Net/length dei @buf :len -> + @buf :len <-
+	])
 ])
 
 (word draw (--) [
