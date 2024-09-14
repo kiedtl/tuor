@@ -7,7 +7,24 @@
 (use net)
 
 (use assets)
+
+(enum LineType U8
+	status
+	heading
+	text
+	// link
+	// list
+	// quote
+	// pre
+)
+
+(struct Line
+	[type LineType]
+	[line      @U8]
+)
+
 (let buf (Of vec/Vector U8))
+(let document (Of vec/Vector Line))
 
 (word main ( -- ) [
 	[ ( -- ) halt ] .Screen/vector deo
@@ -15,6 +32,7 @@
 
 	alloc/init
 	2048s @buf ;init-sized
+	25s @document ;init-sized
 
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
@@ -25,11 +43,53 @@
 	"gemini://geminiprotocol.net/" "geminiprotocol.net"
 		make-request
 
+	parse-buf
 	draw
+])
+
+(word parse-buf ( -- ) [
+	0s @document ;shrink-to
+
+	(let line-start @U8)
+
+	// (newline-addr -- )
+	(word process-line (@U8 -- ) [
+		// Change the newline to a NUL
+		0 swap-sb <-
+		$line-start
+		(cond
+			[ (-- Bool) @document :len -> 0= ] [ .LineType/status ] 
+			[ (-- Bool) ldak '# = ] [
+				// Advance past #
+				// TODO: sub-headings
+				// TODO: handle lack of space
+				1+
+				.LineType/heading
+			]
+			[ .LineType/text ]
+		)
+		@document ;add-return move
+		(r copy) :type <-
+		(r move) :line <-
+		//"Line: " print-string $line-start print-string nl
+	])
+
+	@buf :items ->
+	dup @line-start <-
+	ldak
+	(while [ 0<> ] [
+		0x0A = (when [
+			dup process-line
+			dup 1+ @line-start <-
+		])
+		1+ ldak
+	]) 2drop
 ])
 
 // ( url host -- )
 (word make-request (@U8 @U8 -- ) [
+	0s @buf ;shrink-to
+
 	(let conn net/ConnectArgs)
 	@conn :host <-
 	1965s @conn :port <-
@@ -67,26 +127,54 @@
 
 (word draw (--) [
 	draw-mouse
-	draw-text
+	render
 ])
 
-(word draw-text (--) [
+(word render (--) [
 	0x1 .Screen/auto deo
 	0s .Screen/x deo
 	0s .Screen/y deo
 
-	(let last-space @[U8])
-	(let last-space-screenx U16)
-	@buf :items -> @last-space <-
+	@document :items ->
+	@document :len ->
+	0s
+	(until [ (U16 U16 -- Bool) = ] [
+		// items len ind
+		rot 2dup :
+		// len ind items ptr
+		(as @Line) // FIXME: shouldn't be necessary, : should cast for us
+		dup :type ->
+			(cond
+				[ .LineType/heading = ] [ "# " draw-text ]
+				// TODO: language: continue
+				// [ .LineType/status = ] [ continue ]
+			)
+			drop
+		:line ->
+			draw-text
+			draw-next-line
+		// len ind items
+		rot>
+		// items len ind
+		1+
+	])
+	3drop
+])
+
+(let last-space @U8)
+(let last-space-screenx U16)
+
+(word draw-next-line (--) [
+	0s .Screen/x deo
+	0s @last-space-screenx <-
+	.Screen/y dei 12s + .Screen/y deo
+])
+
+(word draw-text (@U8 --) [
+	dup @last-space <-
 	0s @last-space-screenx <-
 
-	(word next-line (--) [
-		0s .Screen/x deo
-		0s @last-space-screenx <-
-		.Screen/y dei 12s + .Screen/y deo
-	])
-
-	@buf :items ->
+	copy
 	ldak
 	(while [ 0<> ] [
 		.Screen/width dei 8s - .Screen/x dei <
@@ -95,7 +183,7 @@
 
 				// Ensure last whitespace wasn't beginning
 				// of string
-				dup @buf :items -> <>
+				dup (r copy) <>
 				(when  [
 					// Move past the actual space
 					//
@@ -116,7 +204,7 @@
 					drop
 				])
 
-				next-line
+				draw-next-line
 
 				// TODO: continue
 				drop ldak
@@ -130,7 +218,7 @@
 
 		// TODO: allow '\n' and '\t' literal
 		(cond
-			[ 0x0A = ] [ drop next-line ]
+			[ 0x0A = ] [ drop draw-next-line ]
 			[ 0x09 = ] [ drop 0x20 draw-char ]
 			[ draw-char ]
 		)
@@ -138,6 +226,7 @@
 		1+ ldak
 	])
 	2drop
+	(r drop)
 ])
 
 // TODO: optimize when cond bodies are the same
