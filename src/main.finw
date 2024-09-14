@@ -20,6 +20,7 @@
 
 (struct Line
 	[type LineType]
+	[data  @Opaque] // TODO: untagged unions
 	[line      @U8]
 )
 
@@ -40,9 +41,7 @@
 	100s 8s * .Screen/width deo
 	70s 8s * .Screen/height deo
 
-	"gemini://geminiprotocol.net/" "geminiprotocol.net"
-		make-request
-
+	"gemini://geminiprotocol.net/" make-request
 	parse-buf
 	draw
 ])
@@ -57,19 +56,26 @@
 		// Change the newline to a NUL
 		0 swap-sb <-
 		$line-start
+		ldak
 		(cond
-			[ (-- Bool) @document :len -> 0= ] [ .LineType/status ] 
-			[ (-- Bool) ldak '# = ] [
-				// Advance past #
-				// TODO: sub-headings
-				// TODO: handle lack of space
-				1+
-				.LineType/heading
+			[ (-- Bool) @document :len -> 0= ] [
+				drop
+				0s (as @Opaque) .LineType/status
 			]
-			[ .LineType/text ]
+			[ '# = ] [
+				(r 0) // Heading level ctr
+				(until [ '# <> ] [
+						drop 1+ (r 1+) ldak
+				])
+				// Advance past space
+				0x20 = (when [ 1+ ])
+				(r move) (as @Opaque) .LineType/heading
+			]
+			[ drop 0s (as @Opaque) .LineType/text ]
 		)
 		@document ;add-return move
 		(r copy) :type <-
+		(r copy) :data <-
 		(r move) :line <-
 		//"Line: " print-string $line-start print-string nl
 	])
@@ -86,9 +92,11 @@
 	]) 2drop
 ])
 
-// ( url host -- )
-(word make-request (@U8 @U8 -- ) [
+// ( url -- )
+(word make-request (@U8 -- ) [
 	0s @buf ;shrink-to
+
+	dup parse-url
 
 	(let conn net/ConnectArgs)
 	@conn :host <-
@@ -145,11 +153,19 @@
 		(as @Line) // FIXME: shouldn't be necessary, : should cast for us
 		dup :type ->
 			(cond
-				[ .LineType/heading = ] [ "# " draw-text ]
+				[ .LineType/heading = ] [
+					drop
+					dup :data -> (as U8)
+					(until [ 0= ] [
+						1- "#" draw-text
+					])
+					" " draw-text
+					drop
+				]
 				// TODO: language: continue
 				// [ .LineType/status = ] [ continue ]
+				[ drop ]
 			)
-			drop
 		:line ->
 			draw-text
 			draw-next-line
@@ -280,4 +296,47 @@
 	] [
 		// Button press
 	])
+])
+
+// TODO: handle https://, gopher://, etc (will need strfind("://"))
+// TODO: handle relative URLs
+(word parse-url (@U8 -- @U8) [
+	// TODO: ensure shadowing works correct, then rename this to "buf"
+	(let mybuf [U8 32])
+
+	// First move past the gemini://, if it's there
+	dup "gemini://" std/strstartequ (when [
+		ldak
+		(until [ '/ = ] [
+				drop 1+ ldak
+		]) drop 1+ 1+
+	])
+
+	// Next, move into buffer so we can modify it
+	// It's okay if stuff gets chopped off
+	24s swap @mybuf std/memcpy
+	dup 24s : 0 swap-sb <- // Set the NUL, just in case
+
+	// Find the slash (or if it doesn't exist, the NUL
+	ldak
+	(until [ dup '/ = swap 0= or ] [
+		drop 1+ ldak
+	]) drop
+
+	// Stop the string at the slash
+	0 swap-sb <-
+
+	@mybuf
+	// TODO: should coerce
+	(as @U8)
+])
+(test parse-url [
+	"gemini://domain.com/foo/bar/baz.gmi" parse-url print-string
+		(should stdout-eq "domain.com")
+
+	"domain.com/foo/bar/baz.gmi" parse-url print-string
+		(should stdout-eq "domain.com")
+
+	"foo.domain.com" parse-url print-string
+		(should stdout-eq "foo.domain.com")
 ])
