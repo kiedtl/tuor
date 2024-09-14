@@ -8,11 +8,15 @@
 
 (use assets)
 
+(struct Link
+	[url @U8]
+)
+
 (enum LineType U8
-	status
-	heading
-	text
-	// link
+	[status   0]
+	[heading  1]
+	[text     2]
+	[link     3]
 	// list
 	// quote
 	// pre
@@ -26,6 +30,7 @@
 
 (let buf (Of vec/Vector U8))
 (let document (Of vec/Vector Line))
+(let links (Of vec/Vector Link))
 
 (word main ( -- ) [
 	[ ( -- ) halt ] .Screen/vector deo
@@ -34,6 +39,7 @@
 	alloc/init
 	2048s @buf ;init-sized
 	25s @document ;init-sized
+	5s @links ;init-sized
 
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
@@ -46,8 +52,11 @@
 	draw
 ])
 
+// TODO: factor out "first-non-space"
+//
 (word parse-buf ( -- ) [
 	0s @document ;shrink-to
+	0s @links ;shrink-to
 
 	(let line-start @U8)
 
@@ -56,28 +65,46 @@
 		// Change the newline to a NUL
 		0 swap-sb <-
 		$line-start
-		ldak
 		(cond
 			[ (-- Bool) @document :len -> 0= ] [
-				drop
 				0s (as @Opaque) .LineType/status
 			]
-			[ '# = ] [
+			[ -> '# = ] [
 				(r 0) // Heading level ctr
-				(until [ '# <> ] [
-						drop 1+ (r 1+) ldak
-				])
+				(until [ (-- Bool) ldak '# <> ] [ 1+ (r 1+) ])
+
 				// Advance past space
-				0x20 = (when [ 1+ ])
+				ldak 0x20 = (when [ 1+ ])
 				(r move) (as @Opaque) .LineType/heading
 			]
-			[ drop 0s (as @Opaque) .LineType/text ]
+			[ "=>" std/strstartequ ] [
+				// Move past "=>" and spacing
+				1+ 1+
+				(until [ (-- Bool) ldak 0x20 <> ] [ 1+ ])
+
+				// Separate URL and text
+				dup
+				(until [ (-- Bool) ldak is-whitespace ] [ 1+ ])
+				dup 0 swap-sb <- // TODO: optimize <value> <swap-sb> <-
+				                 // to (r val) move (r <-)
+				1+
+
+				// Move past spaces again (text)
+				(while [ (-- Bool) ldak is-whitespace ] [ 1+ ])
+				swap
+				@links ;add-one
+				@links ;last-ptr
+					:url <-
+
+				@links :len -> 1- (as @Opaque)
+				.LineType/link
+			]
+			[ 0s (as @Opaque) .LineType/text ]
 		)
 		@document ;add-return move
-		(r copy) :type <-
-		(r copy) :data <-
-		(r move) :line <-
-		//"Line: " print-string $line-start print-string nl
+			(r copy) :type <-
+			(r copy) :data <-
+			(r move) :line <-
 	])
 
 	@buf :items ->
@@ -154,6 +181,10 @@
 		dup :type ->
 			(cond
 				[ .LineType/heading = ] [
+					// TODO: optimize: if every cond branch body starts
+					// with "DROP", then dup'ing isn't necessary for last
+					// branch
+					//
 					drop
 					dup :data -> (as U8)
 					(until [ 0= ] [
@@ -161,6 +192,14 @@
 					])
 					" " draw-text
 					drop
+				]
+				[ .LineType/link = ] [
+					drop
+					"*> (" draw-text
+					dup :data -> (as U16)
+						@links :items -> : (as @Link) :url ->
+						draw-text
+					") " draw-text
 				]
 				// TODO: language: continue
 				// [ .LineType/status = ] [ continue ]
@@ -248,6 +287,14 @@
 // TODO: optimize when cond bodies are the same
 // TODO: (or) builtin
 (word is-whitespace (Char8 -- Bool) [
+	// TODO: uncomment and test, should work
+	// (too lazy to test now, in middle of other things)
+	//
+	//copy (r [ 0x0A = ])
+	//copy (r [ 0x09 = or ])
+	//move (r [ 0x20 = or ])
+	//(r move)
+
 	(cond
 		[ 0x0A = ] [ t ]
 		[ 0x09 = ] [ t ]
