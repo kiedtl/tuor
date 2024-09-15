@@ -8,6 +8,11 @@
 
 (use assets)
 
+(enum Mode U8
+	norm
+	sel-link
+)
+
 (struct Link
 	[url @U8]
 )
@@ -28,18 +33,25 @@
 	[line      @U8]
 )
 
+(let ui-mode Mode)
+(let ui-sel-link @[U8 3])
+
+(let conn net/ConnectArgs)
 (let buf (Of vec/Vector U8))
 (let document (Of vec/Vector Line))
 (let links (Of vec/Vector Link))
 
 (word main ( -- ) [
-	[ ( -- ) halt ] .Screen/vector deo
-	[ (--) on-mouse halt ] .Mouse/vector deo
+	[ (--) on-frame           ] .Screen/vector deo
+	[ (--) on-mouse           ] .Mouse/vector deo
+	[ (--) on-controller halt ] .Controller/vector deo // TODO: bad folding!
+
+	.Mode/norm @ui-mode <-
 
 	alloc/init
-	2048s @buf ;init-sized
-	25s @document ;init-sized
-	5s @links ;init-sized
+	4096s @buf ;init-sized
+	256s @document ;init-sized
+	64s @links ;init-sized
 
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
@@ -119,13 +131,38 @@
 	]) 2drop
 ])
 
+// Check if URL is relative or not, then make request.
+//
+// (link-url -- )
+(word goto (@U8 -- ) [
+	dup "http" std/strstartequ (when [
+		"Can't follow HTTP/S link" print-string nl
+		drop return
+	])
+
+	dup "gemini://" std/strstartequ not (when [
+		(let urlbuf [U8 64])
+		0 64s @urlbuf std/memset8
+		"gemini://" @urlbuf std/strcpy
+		@conn :host -> swap std/strcpy
+		"/" swap std/strcpy
+		std/strcpy drop
+		@urlbuf (as @U8)
+	])
+
+	alloc/defrag
+	make-request
+	parse-buf
+	render
+])
+
 // ( url -- )
 (word make-request (@U8 -- ) [
 	0s @buf ;shrink-to
 
+	dup "Url: " print-string print-string nl
 	dup parse-url
 
-	(let conn net/ConnectArgs)
 	@conn :host <-
 	1965s @conn :port <-
 	@conn .Net/connect deo
@@ -153,11 +190,21 @@
 	])
 
 	(until [ ( -- Bool) .Net/status dei .Status/ok <> ] [
-		@buf :len -> 256s + @buf ;ensure-capacity
-		256s .Net/length deo
+		@buf :len -> 1024s + @buf ;try-ensure-capacity
+			not (when [
+				"Out of memory! Try using a real Gemini client." print-string nl
+				"(Tried to allocate " print-string
+						@buf :len -> print-dec
+						" + 256 bytes)" print-string
+						nl
+				return
+			])
+		1024s .Net/length deo
 		@buf :len -> @buf :items -> + .Net/recv deo
 		.Net/length dei @buf :len -> + @buf :len <-
 	])
+
+	0 .Net/close deo
 ])
 
 (word draw (--) [
@@ -195,11 +242,10 @@
 				]
 				[ .LineType/link = ] [
 					drop
-					"*> (" draw-text
-					dup :data -> (as U16)
-						@links :items -> : (as @Link) :url ->
-						draw-text
-					") " draw-text
+					"[" draw-text
+					(let b @[U8 3])
+					dup :data -> (as U8) @b link-index-to-keyset draw-text
+					"] " draw-text
 				]
 				// TODO: language: continue
 				// [ .LineType/status = ] [ continue ]
@@ -335,7 +381,47 @@
 	0x41 .Screen/sprite deo
 ])
 
-(word on-frame ( -- ) [ ])
+(word on-frame ( -- ) [
+	halt
+])
+
+(word on-controller ( -- ) [
+	$ui-mode
+	(cond
+		[ .Mode/norm = ] [
+			.Controller/key dei
+			(cond
+				[ 'f = ] [
+					.Mode/sel-link @ui-mode <-
+					0 3s @ui-sel-link std/memset8 drop
+				]
+			)
+		]
+		[ .Mode/sel-link = ] [
+			.Controller/key dei
+				@ui-sel-link (as @U8)
+					(while [ (-- Bool) ldak 0 <> ] [ 1+ ])
+				<-
+			// Sequence is "complete" if first char is 0..9 or has two chars
+			@ui-sel-link (as @U8)
+				dup :0 -> 'a < move
+					:1 -> 0<> (r move) or
+			(when [
+				.Mode/norm @ui-mode <-
+				@ui-sel-link keyset-to-link-index
+				dup @links :len -> (as U8) >= (when [
+					drop
+					"No such link" print-string nl
+				] [
+					@links :items -> : (as @Link) :url ->
+					goto
+				])
+			])
+		]
+	)
+	drop
+	halt
+])
 
 (word on-mouse ( -- ) [
 	.Mouse/state dei 0= (when [
@@ -343,6 +429,7 @@
 	] [
 		// Button press
 	])
+	halt
 ])
 
 // TODO: handle https://, gopher://, etc (will need strfind("://"))
@@ -386,4 +473,33 @@
 
 	"foo.domain.com" parse-url print-string
 		(should stdout-eq "foo.domain.com")
+])
+
+(word link-index-to-keyset (U8 @[U8 3] -- @[U8 3]) [
+	move (r dup)
+	dup 10 / dup 0<> (when [ '` + (r copy) <- (r 1+) ] [ drop ])
+	10 mod '0 + (r [ copy 1+ ]) <-
+	0 (r move) <- // Nul terminator
+	(r move)
+])
+(test link-index-to-keyset [
+	(let b [U8 3]) // TODO: test shadowing and rename to buf
+	 0 @b link-index-to-keyset print-string (should stdout-eq "0")
+	 5 @b link-index-to-keyset print-string (should stdout-eq "5")
+	25 @b link-index-to-keyset print-string (should stdout-eq "b5")
+	52 @b link-index-to-keyset print-string (should stdout-eq "e2")
+	70 @b link-index-to-keyset print-string (should stdout-eq "g0")
+	 9 @b link-index-to-keyset print-string (should stdout-eq "9")
+])
+
+(word keyset-to-link-index (@[U8 3] -- U8) [
+	copy -> dup 'a >= (when [ '` - 10 * (r 1+) ] [ drop 0 ])
+	(r move) -> '0 - + (as U8)
+])
+(test link-index-to-keyset [
+	 "0" keyset-to-link-index (should eq 0)
+	"a8" keyset-to-link-index (should eq 18)
+	"b1" keyset-to-link-index (should eq 21)
+	 "8" keyset-to-link-index (should eq 8)
+	"c0" keyset-to-link-index (should eq 30)
 ])
