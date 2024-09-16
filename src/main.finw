@@ -18,6 +18,7 @@
 (enum Mode U8
 	norm
 	sel-link
+	input
 )
 
 (struct Link
@@ -40,6 +41,28 @@
 	[line      @U8]
 )
 
+(struct Input
+	[cursor       U16] // U16 because it leads to less casting
+	[len          U16]
+	[buffer  [U8 128]]
+)
+
+#(method Input)
+(word reset (@Input -- ) [
+	move
+	0s (r copy) :len <-
+	0 128s (r move) std/memset8
+])
+
+#(method Input)
+(word insert (U8 @Input -- ) [
+	move
+
+	(r copy) :len -> 1+ (r copy) :len <-
+	(r copy) :buffer (r copy) :cursor -> + (as @U8) <-
+	(r copy) :cursor -> 1+ (r move) :cursor <-
+])
+
 (word STARTX (-- U16) [ 16s ])
 (word ENDX (-- U16) [ .Screen/width dei 16s - ])
 (word STARTY (-- U16) [ 16s ])
@@ -50,6 +73,7 @@
 (let ui-current-font @U8)
 (let ui-current-style U8)
 (let ui-scroll U16)
+(let ui-input Input) // TODO: ensure $ui-input :cursor is optimized to single LDA
 
 // Per-render state for draw-next-line
 // Only reason it's global is because draw-content() needs to reset it
@@ -71,10 +95,11 @@
 	4096s @buf ;init-sized
 	256s @document ;init-sized
 	64s @links ;init-sized
+	@ui-input ;reset
 
-	0xf2bcs .System/r deo
-	0xf2ccs .System/g deo
-	0xf3cds .System/b deo
+	0xf2b5s .System/r deo
+	0xf2c5s .System/g deo
+	0xf3c6s .System/b deo
 	70s 8s * .Screen/width deo
 	90s 8s * .Screen/height deo
 
@@ -231,6 +256,30 @@
 	draw-mouse
 	draw-content
 	draw-status
+	draw-input
+])
+
+(word draw-input (--) [
+	@assets/FONT-NORM @ui-current-font <-
+	0x01 @ui-current-style <-
+	0s .Screen/x deo
+	ENDY 16s 2s * + .Screen/y deo
+
+	@ui-input :len -> 0= (when [ return ])
+
+	@ui-input :cursor -> @ui-input :buffer + 1-
+	@ui-input :buffer
+	ldak
+	(while [ 0<> ] [
+		draw-char
+		2dup = (when [
+			0x15 .Screen/auto deo
+			@assets/BLINKER .Screen/addr deo
+			0x0f .Screen/sprite deo
+			0x0 .Screen/auto deo
+		])
+		1+ ldak
+	]) 3drop
 ])
 
 (word draw-status (--) [
@@ -246,10 +295,6 @@
 		@numstr std/itoa10
 
 	// Padding
-	@numstr print-string nl
-	@numstr std/strlen print-dec nl
-	@numstr std/strlen 3s swap - print-dec nl
-
 	@numstr measure-string 28s STARTX + swap -
 		(while [ .Screen/x dei > ] [
 			0x20 draw-char
@@ -500,6 +545,11 @@
 		[ .Mode/norm = ] [
 			.Controller/key dei
 			(cond
+				[ ': = ] [
+					.Mode/input @ui-mode <-
+					': @ui-input ;insert
+					draw
+				]
 				[ 'f = ] [
 					.Mode/sel-link @ui-mode <-
 					0 3s @ui-sel-link std/memset8
@@ -535,6 +585,15 @@
 					goto
 				])
 			])
+		]
+		[ .Mode/input = ] [
+			.Controller/key dei
+			// Can't figure out why it's sometimes zero
+			// Apparently on-controller gets called twice when user presses ':'?
+			dup 0<> (when [
+				@ui-input ;insert
+			] [ drop ])
+			draw
 		]
 	)
 	drop

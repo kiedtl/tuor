@@ -5,6 +5,11 @@
 	0x80c0s 0xe0f0s 0xf8e0s 0x1000s
 ])
 
+(let BLINKER Sprite8 [
+	0x8080s 0x8080s 0x8080s 0x8080s
+	0x8080s 0x8080s 0x8080s 0x8080s
+])
+
 (let FONT-NORM [U8] (embed "../assets/geneva14.uf2"))
 (let FONT-FAT  [U8] (embed "../assets/venice14.uf2"))
 (let FONT-EMPH [U8] (embed "../assets/losangeles12.uf2"))
