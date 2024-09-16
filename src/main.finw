@@ -35,6 +35,7 @@
 
 (let ui-mode Mode)
 (let ui-sel-link @[U8 3])
+(let ui-current-font @U8)
 
 (let conn net/ConnectArgs)
 (let buf (Of vec/Vector U8))
@@ -42,8 +43,7 @@
 (let links (Of vec/Vector Link))
 
 (word main ( -- ) [
-	[ (--) on-frame           ] .Screen/vector deo
-	[ (--) on-mouse           ] .Mouse/vector deo
+	[ (--) on-mouse      halt ] .Mouse/vector deo
 	[ (--) on-controller halt ] .Controller/vector deo // TODO: bad folding!
 
 	.Mode/norm @ui-mode <-
@@ -56,8 +56,8 @@
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
 	0xf0c0s .System/b deo
-	100s 8s * .Screen/width deo
-	70s 8s * .Screen/height deo
+	80s 8s * .Screen/width deo
+	50s 8s * .Screen/height deo
 
 	"gemini://geminiprotocol.net/" make-request
 	parse-buf
@@ -213,7 +213,9 @@
 ])
 
 (word render (--) [
-	0x1 .Screen/auto deo
+	@assets/FONT-NORM @ui-current-font <-
+
+	0x15 .Screen/auto deo
 	0s .Screen/x deo
 	0s .Screen/y deo
 
@@ -228,6 +230,8 @@
 		dup :type ->
 			(cond
 				[ .LineType/heading = ] [
+					@assets/FONT-FAT @ui-current-font <-
+
 					// TODO: optimize: if every cond branch body starts
 					// with "DROP", then dup'ing isn't necessary for last
 					// branch
@@ -251,9 +255,19 @@
 				// [ .LineType/status = ] [ continue ]
 				[ drop ]
 			)
-		:line ->
+
+		dup :line ->
 			draw-text
 			draw-next-line
+
+		:type ->
+			(cond
+				[ .LineType/heading = ] [
+					@assets/FONT-NORM @ui-current-font <-
+				]
+			)
+			drop
+
 		// len ind items
 		rot>
 		// items len ind
@@ -266,9 +280,15 @@
 (let last-space-screenx U16)
 
 (word draw-next-line (--) [
+	0 // Dummy value // TODO
+	(while [ (-- Bool) .Screen/width dei .Screen/x dei > ] [
+		0x20 draw-char
+	])
+	drop // Dummy value
+
 	0s .Screen/x deo
 	0s @last-space-screenx <-
-	.Screen/y dei 12s + .Screen/y deo
+	.Screen/y dei 16s + .Screen/y deo
 ])
 
 (word draw-text (@U8 --) [
@@ -278,7 +298,7 @@
 	copy
 	ldak
 	(while [ 0<> ] [
-		.Screen/width dei 8s - .Screen/x dei <
+		.Screen/width dei 14s - .Screen/x dei <
 			(when [
 				$last-space
 
@@ -291,13 +311,10 @@
 					// FIXME: handle multiple spaces in a row
 					1+
 
-					.Screen/x dei
-					$last-space-screenx
-					(while [ (U16 U16 -- Bool) <> ] [
-						dup .Screen/x deo
+					$last-space-screenx .Screen/x deo
+					(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [
 						0x20 draw-char
-						8s +
-					]) 2drop
+					])
 					rot-sbs drop
 					swap-bs
 				] [
@@ -350,18 +367,21 @@
 	nip
 ])
 
-(word set-glyph-addr (U8 -- ) [
-	32 + @assets/FONT : .Screen/addr deo
-])
-
 (word draw-char (U8 -- ) [
-	set-glyph-addr
-	0x01 .Screen/sprite deo
-])
+	(as U16) dup
 
-(word draw-char-inverse (U8 -- ) [
-	set-glyph-addr
-	0x04 .Screen/sprite deo
+	0x50 bsft 255s + $ui-current-font + .Screen/addr deo
+	(r [ .Screen/x dei ]) // Save x position
+	0x01 .Screen/sprite deo
+
+	// Draw, then draw second sprite if width > 8
+	$ui-current-font + -> (as U16)
+	dup 8s > (when [
+		0x01 .Screen/sprite deo
+	])
+
+	// Advance per glyph width
+	(r move) + .Screen/x deo
 ])
 
 (word draw-mouse ( -- ) [
@@ -381,10 +401,7 @@
 	0x41 .Screen/sprite deo
 ])
 
-(word on-frame ( -- ) [
-	halt
-])
-
+#inline
 (word on-controller ( -- ) [
 	$ui-mode
 	(cond
@@ -423,13 +440,13 @@
 	halt
 ])
 
+#inline
 (word on-mouse ( -- ) [
 	.Mouse/state dei 0= (when [
-		draw
+		draw-mouse
 	] [
 		// Button press
 	])
-	halt
 ])
 
 // TODO: handle https://, gopher://, etc (will need strfind("://"))

@@ -5,4 +5,5 @@
 	0x80c0s 0xe0f0s 0xf8e0s 0x1000s
 ])
 
-(let FONT [Sprite8] (embed "../assets/atari8.uf1"))
+(let FONT-NORM [U8] (embed "../assets/geneva14.uf2"))
+(let FONT-FAT  [U8] (embed "../assets/venice14.uf2"))
