@@ -69,6 +69,22 @@
 ])
 
 #(method Input)
+(word backspace (@Input -- ) [
+	dup :cursor -> 0= (when [ drop return ])
+
+	move
+
+	(r copy) :cursor -> (r copy) :len -> swap -
+	(r copy) :buffer (r copy) :cursor -> + (as @U8)
+	dup 1-
+	std/memcpy drop
+
+	(r copy) :len -> 1- (r copy) :len <-
+	0 (r copy) :buffer (r copy) :len -> + (as @U8) <-
+	(r copy) :cursor -> 1- (r move) :cursor <-
+])
+
+#(method Input)
 (word insert (U8 @Input -- ) [
 	move
 
@@ -298,6 +314,7 @@
 	.Screen/y deo
 	.Screen/x deo
 
+	"Buffer: " print-string @ui-input :buffer print-string nl
 	@ui-input :cursor -> @ui-input :buffer + 1-
 	@ui-input :buffer
 	ldak
@@ -312,6 +329,11 @@
 		])
 		1+ ldak
 	]) 3drop
+
+	// Fill rest of statusline
+	0 // dummy value
+	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
+	drop // dummy value
 ])
 
 (word draw-status (--) [
@@ -354,7 +376,8 @@
 			]) drop
 		draw-string
 
-	// Fill rest of statusline
+	// Fill rest of input
+	// TODO: duplicated this code from end of draw-statusline()
 	0 // dummy value
 	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
 	drop // dummy value
@@ -620,11 +643,20 @@
 		]
 		[ .Mode/input = ] [
 			.Controller/key dei
-			// Can't figure out why it's sometimes zero
-			// Apparently on-controller gets called twice when user presses ':'?
-			dup 0<> (when [
-				@ui-input ;insert
-			] [ drop ])
+			(cond
+				// Can't figure out why it's sometimes zero
+				// Apparently on-controller gets called twice when user presses ':'?
+				[ 0= ] [ drop ]
+
+				[ 0x08 = ] [
+					drop
+					@ui-input ;backspace
+				]
+
+				[
+					@ui-input ;insert
+				]
+			)
 
 			.Controller/button dei
 			(cond
@@ -636,6 +668,11 @@
 				]
 			)
 			drop
+
+			@ui-input :len -> 0= (when [
+				@ui-input ;reset
+				.Mode/norm @ui-mode <-
+			])
 
 			draw
 		]
