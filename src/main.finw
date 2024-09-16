@@ -43,18 +43,20 @@
 (word STARTX (-- U16) [ 16s ])
 (word ENDX (-- U16) [ .Screen/width dei 16s - ])
 (word STARTY (-- U16) [ 16s ])
-(word ENDY (-- U16) [ .Screen/height dei 16s - ])
+(word ENDY (-- U16) [ .Screen/height dei 16s 3s * - ])
 
 (let ui-mode Mode)
 (let ui-sel-link @[U8 3])
 (let ui-current-font @U8)
+(let ui-current-style U8)
 (let ui-scroll U16)
 
 // Per-render state for draw-next-line
-// Only reason it's global is because render() needs to reset it
+// Only reason it's global is because draw-content() needs to reset it
 (let ui-cur-line U16)
 
 (let conn net/ConnectArgs)
+(let last-url @U8)
 (let buf (Of vec/Vector U8))
 (let document (Of vec/Vector Line))
 (let links (Of vec/Vector Link))
@@ -70,9 +72,9 @@
 	256s @document ;init-sized
 	64s @links ;init-sized
 
-	0xf07fs .System/r deo
-	0xf0e0s .System/g deo
-	0xf0c0s .System/b deo
+	0xf2bcs .System/r deo
+	0xf2ccs .System/g deo
+	0xf3cds .System/b deo
 	70s 8s * .Screen/width deo
 	90s 8s * .Screen/height deo
 
@@ -171,13 +173,14 @@
 	alloc/defrag
 	make-request
 	parse-buf
-	render
+	draw-content
 ])
 
 // ( url -- )
 (word make-request (@U8 -- ) [
 	0s @buf ;shrink-to
 
+	dup @last-url <-
 	dup parse-url
 
 	@conn :host <-
@@ -226,12 +229,62 @@
 
 (word draw (--) [
 	draw-mouse
-	render
+	draw-content
+	draw-status
 ])
 
-(word render (--) [
-	nl nl
+(word draw-status (--) [
+	0x09 @ui-current-style <-
+	0s .Screen/x deo
+	ENDY 16s + .Screen/y deo
 
+	0x20 draw-char
+
+	(let numstr [U8 4])
+	0 4s @numstr std/memset8
+	$ui-scroll 100s * $ui-cur-line /
+		@numstr std/itoa10
+
+	// Padding
+	@numstr print-string nl
+	@numstr std/strlen print-dec nl
+	@numstr std/strlen 3s swap - print-dec nl
+
+	@numstr measure-string 28s STARTX + swap -
+		(while [ .Screen/x dei > ] [
+			0x20 draw-char
+		]) drop
+	@numstr draw-string
+	"%" draw-string
+
+	0x20 draw-char
+	0x20 draw-char
+
+	"(" draw-string
+	@assets/FONT-EMPH @ui-current-font <-
+	@document :items -> :0 (as @Line) :line ->
+		// Move past first word in status (e.g. "20 text/gemini")
+		(until [ (-- Bool) ldak is-whitespace     ] [ 1+ ]) // ...Past first word,
+		1+ // Past space that follows after.
+		draw-string
+	")" draw-string
+
+	@assets/FONT-FAT @ui-current-font <-
+	@conn :host ->
+		dup measure-string ENDX swap -
+			(while [ .Screen/x dei > ] [
+				0x20 draw-char
+			]) drop
+		draw-string
+
+	// Fill rest of statusline
+	0 // dummy value
+	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
+	drop // dummy value
+])
+
+(word draw-content (--) [
+	0x01 @ui-current-style <-
 	@assets/FONT-NORM @ui-current-font <-
 	0s @ui-cur-line <-
 
@@ -262,17 +315,17 @@
 					drop
 					dup :data -> (as U8)
 					(until [ 0= ] [
-						1- "#" draw-text
+						1- "#" draw-string
 					])
-					" " draw-text
+					" " draw-string
 					drop
 				]
 				[ .LineType/link = ] [
 					drop
-					"[" draw-text
+					"[" draw-string
 					(let b @[U8 3])
-					dup :data -> (as U8) @b link-index-to-keyset draw-text
-					"] " draw-text
+					dup :data -> (as U8) @b link-index-to-keyset draw-string
+					"] " draw-string
 				]
 				// TODO: language: continue
 				// [ .LineType/status = ] [ continue ]
@@ -280,7 +333,7 @@
 			)
 
 		dup :line ->
-			draw-text
+			draw-string
 			draw-next-line
 
 		:type ->
@@ -312,7 +365,7 @@
 	$ui-cur-line 1+ @ui-cur-line <-
 ])
 
-(word draw-text (@U8 --) [
+(word draw-string (@U8 --) [
 	dup @last-space <-
 	0s @last-space-screenx <-
 
@@ -401,14 +454,25 @@
 	//
 	$ui-cur-line $ui-scroll >= (when [
 		// Draw, then draw second sprite if width > 8
-		0x01 .Screen/sprite deo
+		$ui-current-style .Screen/sprite deo
 		dup 8s > (when [
-			0x01 .Screen/sprite deo
+			$ui-current-style .Screen/sprite deo
 		])
 	])
 
 	// Advance per glyph width
 	(r move) + .Screen/x deo
+])
+
+(word measure-string (@U8 -- U16) [
+	(r 0s)
+	ldak
+	(while [ 0<> ] [
+		(as U16)
+		$ui-current-font + -> (as U16) move (r +)
+		1+ ldak
+	]) 2drop
+	(r move)
 ])
 
 (word draw-mouse ( -- ) [
@@ -442,11 +506,11 @@
 				]
 				[ 'j = ] [
 					$ui-scroll 1+ @ui-scroll <-
-					render
+					draw
 				]
 				[ 'k = ] [
 					$ui-scroll dup 0<> (when [ 1- ]) @ui-scroll <-
-					render
+					draw
 				]
 			)
 			drop

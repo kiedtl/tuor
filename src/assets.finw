@@ -7,3 +7,4 @@
 
 (let FONT-NORM [U8] (embed "../assets/geneva14.uf2"))
 (let FONT-FAT  [U8] (embed "../assets/venice14.uf2"))
+(let FONT-EMPH [U8] (embed "../assets/losangeles12.uf2"))
