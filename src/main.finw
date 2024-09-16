@@ -55,10 +55,30 @@
 ])
 
 #(method Input)
+(word cursor-left (@Input -- ) [
+	dup :cursor -> 0<> (when [
+		dup :cursor -> 1- swap :cursor <-
+	] [ drop ])
+])
+
+#(method Input)
+(word cursor-right (@Input -- ) [
+	dup :cursor -> over :len -> < (when [
+		dup :cursor -> 1+ swap :cursor <-
+	] [ drop ])
+])
+
+#(method Input)
 (word insert (U8 @Input -- ) [
 	move
 
 	(r copy) :len -> 1+ (r copy) :len <-
+
+	(r copy) :cursor -> (r copy) :len -> swap -
+	(r copy) :buffer (r copy) :cursor -> + (as @U8)
+	dup 1+
+	std/memcpyr
+
 	(r copy) :buffer (r copy) :cursor -> + (as @U8) <-
 	(r copy) :cursor -> 1+ (r move) :cursor <-
 ])
@@ -267,16 +287,28 @@
 
 	@ui-input :len -> 0= (when [ return ])
 
+	(let cursor-oldx U16)
+	(let cursor-oldy U16)
+	.Screen/x dei
+	.Screen/y dei
+	$cursor-oldx .Screen/x deo
+	$cursor-oldy .Screen/y deo
+	@assets/BLINKER .Screen/addr deo
+	0x40 .Screen/sprite deo
+	.Screen/y deo
+	.Screen/x deo
+
 	@ui-input :cursor -> @ui-input :buffer + 1-
 	@ui-input :buffer
 	ldak
 	(while [ 0<> ] [
 		draw-char
 		2dup = (when [
-			0x15 .Screen/auto deo
+			.Screen/y dei @cursor-oldy <-
+			.Screen/x dei dup @cursor-oldx <-
 			@assets/BLINKER .Screen/addr deo
-			0x0f .Screen/sprite deo
-			0x0 .Screen/auto deo
+			0x4f .Screen/sprite deo
+			.Screen/x deo
 		])
 		1+ ldak
 	]) 3drop
@@ -593,6 +625,18 @@
 			dup 0<> (when [
 				@ui-input ;insert
 			] [ drop ])
+
+			.Controller/button dei
+			(cond
+				[ .ControllerButton/left = ] [
+					@ui-input ;cursor-left
+				]
+				[ .ControllerButton/right = ] [
+					@ui-input ;cursor-right
+				]
+			)
+			drop
+
 			draw
 		]
 	)
