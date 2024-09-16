@@ -56,8 +56,8 @@
 	0xf07fs .System/r deo
 	0xf0e0s .System/g deo
 	0xf0c0s .System/b deo
-	80s 8s * .Screen/width deo
-	50s 8s * .Screen/height deo
+	70s 8s * .Screen/width deo
+	90s 8s * .Screen/height deo
 
 	"gemini://geminiprotocol.net/" make-request
 	parse-buf
@@ -160,7 +160,6 @@
 (word make-request (@U8 -- ) [
 	0s @buf ;shrink-to
 
-	dup "Url: " print-string print-string nl
 	dup parse-url
 
 	@conn :host <-
