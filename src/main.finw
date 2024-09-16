@@ -58,6 +58,7 @@
 (let ui-current-style U8)
 (let ui-scroll U16)
 (let ui-input input/Ctx) // TODO: ensure $ui-input :cursor is optimized to single LDA
+(let ui-message @U8)
 
 // Per-render state for draw-next-line
 // Only reason it's global is because draw-content() needs to reset it
@@ -76,12 +77,13 @@
 	[ (--) on-controller halt ] .Controller/vector deo // TODO: bad folding!
 
 	.Mode/norm @ui-mode <-
+	@ui-input ;reset
+	"" @ui-message <-
 
 	alloc/init
 	4096s @buf ;init-sized
 	256s @document ;init-sized
 	64s @links ;init-sized
-	@ui-input ;reset
 
 	0xf2b5s .System/r deo
 	0xf2c5s .System/g deo
@@ -102,12 +104,11 @@
 ])
 
 (word cmd-version (--) [
-	"Tuor Gemini Client for Varvara" print-string nl
-	"Version v0.1.0" print-string nl
+	"Tuor for Varvara (v0.1.0)" @ui-message <-
 ])
 
-(word parse-command (--) [
-	@ui-input :buffer move
+(word parse-command (@U8 -- (Of std/MaybeFF U16)) [
+	move
 
 	(r copy) :0 -> ': <> (when [
 		"/dev/sda1 is on fire" std/panic
@@ -127,15 +128,32 @@
 	1s (until [ 0= ] [
 		1-
 		dup @commands : (as @Command)
-			dup :name ->
+			:name ->
 			(r copy) std/strequ (when [
-				dup :func -> do
-				// TODO: break!
+				(make (Of std/MaybeFF U16))
+				(r drop)
+				return
 			])
-			drop
 	]) drop
 
 	(r drop)
+
+	0xFFFFs
+	(make (Of std/MaybeFF U16))
+])
+
+(word process-command (--) [
+	@ui-input :buffer
+
+	parse-command
+	dup ;maybe-not? (when [
+		drop
+		@ui-input ;reset
+		return
+	])
+
+	:value @commands : (as @Command)
+		:func -> do
 
 	@ui-input ;reset
 ])
@@ -288,20 +306,42 @@
 	draw-mouse
 	draw-content
 	draw-status
+	draw-clear-inputline
+	draw-message
 	draw-input
+])
+
+(word draw-clear-inputline (--) [
+	ENDY 16s 2s * + .Screen/y deo
+	0x01 @ui-current-style <-
+
+	0s .Screen/x deo
+	0 // dummy value
+	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
+	drop // dummy value
+	0s .Screen/x deo
+])
+
+(word draw-message (--) [
+	@ui-input :len -> 0<> (when [ return ])
+	$ui-message std/strlen 0= (when [ return ])
+
+	@assets/FONT-NORM @ui-current-font <-
+	0x01 @ui-current-style <-
+	ENDY 16s 2s * + .Screen/y deo
+
+	$ui-message draw-string
+
+	0x02 @ui-current-style <-
+	"-- Press ENTER to dismiss -- "
+		dup measure-string .Screen/width dei swap - .Screen/x deo
+		draw-string-nowrap
 ])
 
 (word draw-input (--) [
 	@assets/FONT-NORM @ui-current-font <-
 	0x01 @ui-current-style <-
 	ENDY 16s 2s * + .Screen/y deo
-
-	// Clear input line
-	0s .Screen/x deo
-	0 // dummy value
-	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
-	drop // dummy value
-	0s .Screen/x deo
 
 	(let cursor-oldx U16)
 	(let cursor-oldy U16)
@@ -517,6 +557,14 @@
 	(r drop)
 ])
 
+(word draw-string-nowrap (@U8 --) [
+	ldak
+	(while [ 0<> ] [
+		draw-char
+		1+ ldak
+	]) 2drop
+])
+
 // TODO: optimize when cond bodies are the same
 // TODO: (or) builtin
 (word is-whitespace (Char8 -- Bool) [
@@ -596,7 +644,12 @@
 		[ .Mode/norm = ] [
 			.Controller/key dei
 			(cond
+				[ 0x0d = ] [
+					"" @ui-message <-
+					draw
+				]
 				[ ': = ] [
+					"" @ui-message <-
 					.Mode/input @ui-mode <-
 					': @ui-input ;insert
 					draw
@@ -645,7 +698,8 @@
 				[ 0= ] [ drop ]
 
 				[ 0x08 = ] [ drop @ui-input ;backspace ]
-				[ 0x0d = ] [ drop parse-command        ]
+				[ 0x0d = ] [ drop process-command      ]
+				[ 0x1b = ] [ drop @ui-input ;reset     ]
 				[ @ui-input ;insert ]
 			)
 
