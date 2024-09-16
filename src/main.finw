@@ -33,6 +33,11 @@
 	[line      @U8]
 )
 
+(word STARTX (-- U16) [ 16s ])
+(word ENDX (-- U16) [ .Screen/width dei 16s - ])
+(word STARTY (-- U16) [ 16s ])
+(word ENDY (-- U16) [ .Screen/height dei 16s - ])
+
 (let ui-mode Mode)
 (let ui-sel-link @[U8 3])
 (let ui-current-font @U8)
@@ -215,8 +220,8 @@
 	@assets/FONT-NORM @ui-current-font <-
 
 	0x15 .Screen/auto deo
-	0s .Screen/x deo
-	0s .Screen/y deo
+	STARTX .Screen/x deo
+	STARTY .Screen/y deo
 
 	@document :items ->
 	@document :len ->
@@ -285,7 +290,7 @@
 	])
 	drop // Dummy value
 
-	0s .Screen/x deo
+	STARTX .Screen/x deo
 	0s @last-space-screenx <-
 	.Screen/y dei 16s + .Screen/y deo
 ])
@@ -297,7 +302,7 @@
 	copy
 	ldak
 	(while [ 0<> ] [
-		.Screen/width dei 14s - .Screen/x dei <
+		ENDX .Screen/x dei <
 			(when [
 				$last-space
 
