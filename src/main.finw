@@ -1,3 +1,10 @@
+// TODO: need for dummy values when using while loop with nothing
+// on the stack (compiler crashes otherwise)
+//
+// 0 // dummy value
+// (while [ ... ] [ ... ])
+// drop // drop dummy value
+
 (use* core)
 (use* varvara)
 
@@ -41,6 +48,11 @@
 (let ui-mode Mode)
 (let ui-sel-link @[U8 3])
 (let ui-current-font @U8)
+(let ui-scroll U16)
+
+// Per-render state for draw-next-line
+// Only reason it's global is because render() needs to reset it
+(let ui-cur-line U16)
 
 (let conn net/ConnectArgs)
 (let buf (Of vec/Vector U8))
@@ -72,6 +84,7 @@
 // TODO: factor out "first-non-space"
 //
 (word parse-buf ( -- ) [
+	0s @ui-scroll <-
 	0s @document ;shrink-to
 	0s @links ;shrink-to
 
@@ -217,11 +230,17 @@
 ])
 
 (word render (--) [
+	nl nl
+
 	@assets/FONT-NORM @ui-current-font <-
+	0s @ui-cur-line <-
 
 	0x15 .Screen/auto deo
 	STARTX .Screen/x deo
 	STARTY .Screen/y deo
+
+	// clear
+	0b10000000 .Screen/pixel deo
 
 	@document :items ->
 	@document :len ->
@@ -284,15 +303,13 @@
 (let last-space-screenx U16)
 
 (word draw-next-line (--) [
-	0 // Dummy value // TODO
-	(while [ (-- Bool) .Screen/width dei .Screen/x dei > ] [
-		0x20 draw-char
-	])
-	drop // Dummy value
-
 	STARTX .Screen/x deo
 	0s @last-space-screenx <-
-	.Screen/y dei 16s + .Screen/y deo
+
+	$ui-cur-line $ui-scroll >= (when [
+		.Screen/y dei 16s + .Screen/y deo
+	])
+	$ui-cur-line 1+ @ui-cur-line <-
 ])
 
 (word draw-text (@U8 --) [
@@ -376,12 +393,18 @@
 
 	0x50 bsft 255s + $ui-current-font + .Screen/addr deo
 	(r [ .Screen/x dei ]) // Save x position
-	0x01 .Screen/sprite deo
+	$ui-current-font + -> (as U16) // Glyph width
 
-	// Draw, then draw second sprite if width > 8
-	$ui-current-font + -> (as U16)
-	dup 8s > (when [
+	// Don't draw unless scrolling permits
+	// Could omit this, but then blank lines disappear (since they get filled
+	// up with previous line's text)
+	//
+	$ui-cur-line $ui-scroll >= (when [
+		// Draw, then draw second sprite if width > 8
 		0x01 .Screen/sprite deo
+		dup 8s > (when [
+			0x01 .Screen/sprite deo
+		])
 	])
 
 	// Advance per glyph width
@@ -405,6 +428,7 @@
 	0x41 .Screen/sprite deo
 ])
 
+// TODO: switch statements already!! Why do I need to `drop` each time?
 #inline
 (word on-controller ( -- ) [
 	$ui-mode
@@ -414,9 +438,18 @@
 			(cond
 				[ 'f = ] [
 					.Mode/sel-link @ui-mode <-
-					0 3s @ui-sel-link std/memset8 drop
+					0 3s @ui-sel-link std/memset8
+				]
+				[ 'j = ] [
+					$ui-scroll 1+ @ui-scroll <-
+					render
+				]
+				[ 'k = ] [
+					$ui-scroll dup 0<> (when [ 1- ]) @ui-scroll <-
+					render
 				]
 			)
+			drop
 		]
 		[ .Mode/sel-link = ] [
 			.Controller/key dei
