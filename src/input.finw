@@ -1,0 +1,60 @@
+(use* core)
+(use std)
+
+(struct Ctx
+	[cursor       U16] // U16 because it leads to less casting
+	[len          U16]
+	[buffer  [U8 128]]
+)
+
+#(method Ctx)
+(word reset (@Ctx -- ) [
+	move
+	0s (r copy) :len <-
+	0 128s (r move) std/memset8
+])
+
+#(method Ctx)
+(word cursor-left (@Ctx -- ) [
+	dup :cursor -> 0<> (when [
+		dup :cursor -> 1- swap :cursor <-
+	] [ drop ])
+])
+
+#(method Ctx)
+(word cursor-right (@Ctx -- ) [
+	dup :cursor -> over :len -> < (when [
+		dup :cursor -> 1+ swap :cursor <-
+	] [ drop ])
+])
+
+#(method Ctx)
+(word backspace (@Ctx -- ) [
+	dup :cursor -> 0= (when [ drop return ])
+
+	move
+
+	(r copy) :cursor -> (r copy) :len -> swap -
+	(r copy) :buffer (r copy) :cursor -> + (as @U8)
+	dup 1-
+	std/memcpy drop
+
+	(r copy) :len -> 1- (r copy) :len <-
+	0 (r copy) :buffer (r copy) :len -> + (as @U8) <-
+	(r copy) :cursor -> 1- (r move) :cursor <-
+])
+
+#(method Ctx)
+(word insert (U8 @Ctx -- ) [
+	move
+
+	(r copy) :len -> 1+ (r copy) :len <-
+
+	(r copy) :cursor -> (r copy) :len -> swap -
+	(r copy) :buffer (r copy) :cursor -> + (as @U8)
+	dup 1+
+	std/memcpyr
+
+	(r copy) :buffer (r copy) :cursor -> + (as @U8) <-
+	(r copy) :cursor -> 1+ (r move) :cursor <-
+])

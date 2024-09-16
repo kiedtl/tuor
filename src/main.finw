@@ -13,7 +13,13 @@
 (use vec)
 (use net)
 
+(use input)
 (use assets)
+
+(struct Command
+	[func  @(Fn (--))]
+	[name         @U8]
+)
 
 (enum Mode U8
 	norm
@@ -41,64 +47,6 @@
 	[line      @U8]
 )
 
-(struct Input
-	[cursor       U16] // U16 because it leads to less casting
-	[len          U16]
-	[buffer  [U8 128]]
-)
-
-#(method Input)
-(word reset (@Input -- ) [
-	move
-	0s (r copy) :len <-
-	0 128s (r move) std/memset8
-])
-
-#(method Input)
-(word cursor-left (@Input -- ) [
-	dup :cursor -> 0<> (when [
-		dup :cursor -> 1- swap :cursor <-
-	] [ drop ])
-])
-
-#(method Input)
-(word cursor-right (@Input -- ) [
-	dup :cursor -> over :len -> < (when [
-		dup :cursor -> 1+ swap :cursor <-
-	] [ drop ])
-])
-
-#(method Input)
-(word backspace (@Input -- ) [
-	dup :cursor -> 0= (when [ drop return ])
-
-	move
-
-	(r copy) :cursor -> (r copy) :len -> swap -
-	(r copy) :buffer (r copy) :cursor -> + (as @U8)
-	dup 1-
-	std/memcpy drop
-
-	(r copy) :len -> 1- (r copy) :len <-
-	0 (r copy) :buffer (r copy) :len -> + (as @U8) <-
-	(r copy) :cursor -> 1- (r move) :cursor <-
-])
-
-#(method Input)
-(word insert (U8 @Input -- ) [
-	move
-
-	(r copy) :len -> 1+ (r copy) :len <-
-
-	(r copy) :cursor -> (r copy) :len -> swap -
-	(r copy) :buffer (r copy) :cursor -> + (as @U8)
-	dup 1+
-	std/memcpyr
-
-	(r copy) :buffer (r copy) :cursor -> + (as @U8) <-
-	(r copy) :cursor -> 1+ (r move) :cursor <-
-])
-
 (word STARTX (-- U16) [ 16s ])
 (word ENDX (-- U16) [ .Screen/width dei 16s - ])
 (word STARTY (-- U16) [ 16s ])
@@ -109,11 +57,13 @@
 (let ui-current-font @U8)
 (let ui-current-style U8)
 (let ui-scroll U16)
-(let ui-input Input) // TODO: ensure $ui-input :cursor is optimized to single LDA
+(let ui-input input/Ctx) // TODO: ensure $ui-input :cursor is optimized to single LDA
 
 // Per-render state for draw-next-line
 // Only reason it's global is because draw-content() needs to reset it
 (let ui-cur-line U16)
+
+(let commands [Command 1]) // XXX: ensure to update len in parse-command() also
 
 (let conn net/ConnectArgs)
 (let last-url @U8)
@@ -136,12 +86,58 @@
 	0xf2b5s .System/r deo
 	0xf2c5s .System/g deo
 	0xf3c6s .System/b deo
-	70s 8s * .Screen/width deo
-	90s 8s * .Screen/height deo
+	60s 8s * .Screen/width deo
+	80s 8s * .Screen/height deo
 
 	"gemini://geminiprotocol.net/" make-request
 	parse-buf
 	draw
+
+	// TODO: allow quotes to be values; static struct literals in let() bindings
+	// TODO: allow quotes with only one value in them to skip arity
+	@commands :0 (as @Command)
+		[ (--) cmd-version ] over :func <-
+		"version"            over :name <-
+		drop
+])
+
+(word cmd-version (--) [
+	"Tuor Gemini Client for Varvara" print-string nl
+	"Version v0.1.0" print-string nl
+])
+
+(word parse-command (--) [
+	@ui-input :buffer move
+
+	(r copy) :0 -> ': <> (when [
+		"/dev/sda1 is on fire" std/panic
+	])
+	(r 1+)
+
+	// Separate by whitespace
+	// Disabled for now, since no command actually needs args...
+	//(r copy)
+	//(until [ (-- Bool) ldak is-whitespace ] [ 1+ ])
+	//0 over-sb <-
+	//move
+
+	// ~~~// ( | command args )~~~
+	// ( | command )
+
+	1s (until [ 0= ] [
+		1-
+		dup @commands : (as @Command)
+			dup :name ->
+			(r copy) std/strequ (when [
+				dup :func -> do
+				// TODO: break!
+			])
+			drop
+	]) drop
+
+	(r drop)
+
+	@ui-input ;reset
 ])
 
 // TODO: factor out "first-non-space"
@@ -298,10 +294,14 @@
 (word draw-input (--) [
 	@assets/FONT-NORM @ui-current-font <-
 	0x01 @ui-current-style <-
-	0s .Screen/x deo
 	ENDY 16s 2s * + .Screen/y deo
 
-	@ui-input :len -> 0= (when [ return ])
+	// Clear input line
+	0s .Screen/x deo
+	0 // dummy value
+	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
+	drop // dummy value
+	0s .Screen/x deo
 
 	(let cursor-oldx U16)
 	(let cursor-oldy U16)
@@ -314,7 +314,8 @@
 	.Screen/y deo
 	.Screen/x deo
 
-	"Buffer: " print-string @ui-input :buffer print-string nl
+	@ui-input :len -> 0= (when [ return ])
+
 	@ui-input :cursor -> @ui-input :buffer + 1-
 	@ui-input :buffer
 	ldak
@@ -329,11 +330,6 @@
 		])
 		1+ ldak
 	]) 3drop
-
-	// Fill rest of statusline
-	0 // dummy value
-	(while [ (-- Bool) .Screen/x dei .Screen/width dei < ] [ 0x20 draw-char ])
-	drop // dummy value
 ])
 
 (word draw-status (--) [
@@ -648,14 +644,9 @@
 				// Apparently on-controller gets called twice when user presses ':'?
 				[ 0= ] [ drop ]
 
-				[ 0x08 = ] [
-					drop
-					@ui-input ;backspace
-				]
-
-				[
-					@ui-input ;insert
-				]
+				[ 0x08 = ] [ drop @ui-input ;backspace ]
+				[ 0x0d = ] [ drop parse-command        ]
+				[ @ui-input ;insert ]
 			)
 
 			.Controller/button dei
