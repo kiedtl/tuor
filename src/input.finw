@@ -69,7 +69,7 @@
 	dup
 	(r copy) :buffer
 		(r copy) :len -> + (as @U8)
-		std/strcpy drop
+		std/strcat drop
 
 	std/strlen
 		(r copy) :len -> + (r copy) :len <-

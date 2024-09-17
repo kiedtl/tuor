@@ -58,7 +58,7 @@
 (let ui-current-style U8)
 (let ui-scroll U16)
 (let ui-input input/Ctx) // TODO: ensure $ui-input :cursor is optimized to single LDA
-(let ui-message @U8)
+(let ui-message [U8 128])
 
 // Per-render state for draw-next-line
 // Only reason it's global is because draw-content() needs to reset it
@@ -78,7 +78,7 @@
 
 	.Mode/norm @ui-mode <-
 	@ui-input ;reset
-	"" @ui-message <-
+	128s @ui-message std/memzero
 
 	alloc/init
 	4096s @buf ;init-sized
@@ -111,11 +111,19 @@
 
 (word cmd-version (@U8 --) [
 	drop
-	"Tuor for Varvara (v0.1.0)" @ui-message <-
+	"Tuor for Varvara (v0.1.0)" set-message
 ])
 
 (word cmd-go (@U8 --) [
 	goto
+])
+
+(word append-message (@U8 -- ) [
+	@ui-message std/strcat drop
+])
+
+(word set-message (@U8 -- ) [
+	dup std/strlen 1+ swap @ui-message std/memcpy drop
 ])
 
 // ( string match-fully? -- index )
@@ -173,10 +181,10 @@
 
 (word history-prev (--) [
 	@history :len -> 1s = (when [
-		$ui-message -> 'N = (when [
-			"I said NO PREVIOUS PAGE" @ui-message <-
+		@ui-message :0 -> 'N = (when [
+			"I said NO PREVIOUS PAGE" set-message
 		] [
-			"No previous page" @ui-message <-
+			"No previous page" set-message
 		])
 		return
 	])
@@ -260,29 +268,28 @@
 // (link-url -- )
 (word goto (@U8 -- ) [
 	dup "http://" std/strstartequ (when [
-		"Can't follow http:// link" @ui-message <-
+		"Can't follow http:// link" set-message
 		drop return
 	])
 
 	dup "https://" std/strstartequ (when [
-		"Can't follow https:// link" @ui-message <-
+		"Can't follow https:// link" set-message
 		drop return
 	])
 
 	dup "gemini://" std/strstartequ not (when [
 		(let urlbuf [U8 64])
 		0 64s @urlbuf std/memset8
-		"gemini://" @urlbuf std/strcpy
-		@conn :host -> swap std/strcpy
-		"/" swap std/strcpy
-		std/strcpy drop
+		"gemini://" @urlbuf std/strcat
+		@conn :host -> swap std/strcat
+		"/" swap std/strcat
+		std/strcat drop
 		@urlbuf (as @U8)
 	])
 
 	alloc/defrag
 	make-request
 	parse-buf
-	draw-content
 ])
 
 // ( url -- )
@@ -368,18 +375,24 @@
 
 (word draw-message (--) [
 	@ui-input :len -> 0<> (when [ return ])
-	$ui-message std/strlen 0= (when [ return ])
+	@ui-message std/strlen 0= (when [ return ])
 
 	@assets/FONT-NORM @ui-current-font <-
 	0x01 @ui-current-style <-
 	ENDY 16s 2s * + .Screen/y deo
 
-	$ui-message draw-string
+	@ui-message draw-string
 
 	0x02 @ui-current-style <-
-	"-- Press ENTER to dismiss -- "
-		dup measure-string .Screen/width dei swap - .Screen/x deo
-		draw-string-nowrap
+
+	$ui-mode .Mode/sel-link = (when [
+		"-- Press ESC to cancel -- " (as @U8)
+	] [
+		"-- Press ENTER to dismiss -- " (as @U8)
+	])
+
+	dup measure-string .Screen/width dei swap - .Screen/x deo
+	draw-string-nowrap
 ])
 
 (word draw-input-hint (--) [
@@ -710,65 +723,90 @@
 			.Controller/key dei
 			(cond
 				[ 0x0d = ] [
-					"" @ui-message <-
-					draw
+					"" set-message
 				]
 				[ ': = ] [
-					"" @ui-message <-
+					"" set-message
 					.Mode/input @ui-mode <-
 					': @ui-input ;insert
-					draw
 				]
 				[ 'h = ] [
 					history-prev
-					draw
 				]
 				//[ 'l = ] [
 				//	history-next
-				//	draw
 				//]
 				[ 'e = ] [
-					"" @ui-message <-
+					"" set-message
 					.Mode/input @ui-mode <-
 					":go " @ui-input ;append-string
 					@history ;last @ui-input ;append-string
-					draw
 				]
 				[ 'f = ] [
 					.Mode/sel-link @ui-mode <-
-					0 3s @ui-sel-link std/memset8
+					3s @ui-sel-link std/memzero
+					"LINK: " set-message
 				]
 				[ 'j = ] [
 					$ui-scroll 1+ @ui-scroll <-
-					draw
 				]
 				[ 'k = ] [
 					$ui-scroll dup 0<> (when [ 1- ]) @ui-scroll <-
-					draw
 				]
 			)
 			drop
 		]
 		[ .Mode/sel-link = ] [
 			.Controller/key dei
-				@ui-sel-link (as @U8)
-					(while [ (-- Bool) ldak 0 <> ] [ 1+ ])
-				<-
-			// Sequence is "complete" if first char is 0..9 or has two chars
-			@ui-sel-link (as @U8)
-				dup :0 -> 'a < move
-					:1 -> 0<> (r move) or
-			(when [
-				.Mode/norm @ui-mode <-
-				@ui-sel-link keyset-to-link-index
-				dup @links :len -> (as U8) >= (when [
+			(cond
+				[ 0x1b = ] [
 					drop
-					"No such link" print-string nl
-				] [
-					@links :items -> : (as @Link) :url ->
-					goto
-				])
-			])
+					"" set-message
+					.Mode/norm @ui-mode <-
+				]
+
+				// Link is automatically followed once user has typed enough,
+				// if enter is pressed we can assume there isn't any link there
+				[ 0x0d = ] [
+					drop
+					"No such link: " set-message
+					@ui-sel-link append-message
+					.Mode/norm @ui-mode <-
+				]
+
+				// Ignore other control/non-printable chars, e.g. backspace
+				[ '! < ] [ drop ]
+
+				[
+					@ui-sel-link (as @U8)
+						(while [ (-- Bool) ldak 0 <> ] [ 1+ ])
+					<-
+
+					"LINK: " set-message
+					@ui-sel-link append-message
+					@ui-sel-link print-string nl
+					@ui-sel-link std/strlen print-dec nl
+
+					// Sequence is "complete" if first char is 0..9 or has two chars
+					@ui-sel-link (as @U8)
+						dup :0 -> 'a < move
+							:1 -> 0<> (r move) or
+
+					(when [
+						"" set-message
+						.Mode/norm @ui-mode <-
+						@ui-sel-link keyset-to-link-index
+						dup @links :len -> (as U8) >= (when [
+							drop
+							"No such link: " set-message
+							@ui-sel-link append-message
+						] [
+							@links :items -> : (as @Link) :url ->
+							goto
+						])
+					])
+				]
+			)
 		]
 		[ .Mode/input = ] [
 			.Controller/key dei
@@ -798,11 +836,10 @@
 				@ui-input ;reset
 				.Mode/norm @ui-mode <-
 			])
-
-			draw
 		]
 	)
 	drop
+	draw
 	halt
 ])
 
