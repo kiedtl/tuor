@@ -58,3 +58,22 @@
 	(r copy) :buffer (r copy) :cursor -> + (as @U8) <-
 	(r copy) :cursor -> 1+ (r move) :cursor <-
 ])
+
+// Appends a string to the end of the buffer and
+// moves the cursor to the very end.
+//
+#(method Ctx)
+(word append-string (@U8 @Ctx -- ) [
+	move
+
+	dup
+	(r copy) :buffer
+		(r copy) :len -> + (as @U8)
+		std/strcpy drop
+
+	std/strlen
+		(r copy) :len -> + (r copy) :len <-
+
+	(r copy) :len ->
+	(r move) :cursor <-
+])

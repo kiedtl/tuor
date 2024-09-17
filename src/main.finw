@@ -17,8 +17,8 @@
 (use assets)
 
 (struct Command
-	[func  @(Fn (--))]
-	[name         @U8]
+	[func  @(Fn (@U8 --))]
+	[name             @U8]
 )
 
 (enum Mode U8
@@ -64,7 +64,7 @@
 // Only reason it's global is because draw-content() needs to reset it
 (let ui-cur-line U16)
 
-(let commands [Command 1]) // XXX: ensure to update len in parse-command() also
+(let commands [Command 2]) // XXX: ensure to update len in parse-command() also
 
 (let conn net/ConnectArgs)
 (let last-url @U8)
@@ -97,18 +97,29 @@
 
 	// TODO: allow quotes to be values; static struct literals in let() bindings
 	// TODO: allow quotes with only one value in them to skip arity
+	// TODO: fix folding issue already and remove 2 drop etc
 	@commands :0 (as @Command)
-		[ (--) cmd-version ] over :func <-
-		"version"            over :name <-
+		[ (@U8 --) 2 drop cmd-version ] over :func <-
+		"version"                       over :name <-
+		drop
+
+	@commands :1 (as @Command)
+		[ (@U8 --) 1 drop cmd-go ] over :func <-
+		"go"                       over :name <-
 		drop
 ])
 
-(word cmd-version (--) [
+(word cmd-version (@U8 --) [
+	drop
 	"Tuor for Varvara (v0.1.0)" @ui-message <-
 ])
 
+(word cmd-go (@U8 --) [
+	goto
+])
+
 // ( string match-fully? -- index )
-(word parse-command (@U8 Bool -- (Of std/MaybeFF U16)) [
+(word parse-command (@U8 Bool -- @U8 (Of std/MaybeFF U16)) [
 	move move
 
 	(r copy) :0 -> ': <> (when [
@@ -117,16 +128,15 @@
 	(r 1+)
 
 	// Separate by whitespace
-	// Disabled for now, since no command actually needs args...
-	//(r copy)
-	//(until [ (-- Bool) ldak is-whitespace ] [ 1+ ])
-	//0 over-sb <-
-	//move
+	(r copy)
+	(until [ (-- Bool) ldak is-whitespace ] [ 1+ ])
+	0 over-sb <-
+	1+
+	(while [ (-- Bool) ldak dup 0<> swap is-whitespace and ] [ 1+ ])
 
-	// ~~~// ( | strict? command args )~~~
-	// ( | strict? command )
+	// ( args | strict? command )
 
-	1s (until [ 0= ] [
+	2s (until [ 0= ] [
 		1-
 		dup @commands : (as @Command)
 			:name ->
@@ -150,12 +160,12 @@
 
 	t parse-command
 	dup ;maybe-not? (when [
-		drop
+		2drop
 		@ui-input ;reset
 		return
 	])
 
-	:value @commands : (as @Command)
+	:value dup "Returned: " print-string print-dec nl @commands : (as @Command)
 		:func -> do
 
 	@ui-input ;reset
@@ -311,7 +321,7 @@
 	draw-status
 	draw-clear-inputline
 	draw-message
-	draw-input-hint
+	//draw-input-hint
 	draw-input
 ])
 
@@ -346,7 +356,7 @@
 	@ui-input :len -> 1s <= (when [ return ])
 
 	@ui-input :buffer
-	nil parse-command
+	nil parse-command nip
 	dup ;maybe-not? (when [
 		drop return
 	])
@@ -597,12 +607,14 @@
 	//copy (r [ 0x0A = ])
 	//copy (r [ 0x09 = or ])
 	//move (r [ 0x20 = or ])
+	//move (r [ 0x00 = or ])
 	//(r move)
 
 	(cond
 		[ 0x0A = ] [ t ]
 		[ 0x09 = ] [ t ]
 		[ 0x20 = ] [ t ]
+		[ 0x00 = ] [ t ]
 		[ nil ]
 	)
 	nip
@@ -675,6 +687,13 @@
 					"" @ui-message <-
 					.Mode/input @ui-mode <-
 					': @ui-input ;insert
+					draw
+				]
+				[ 'e = ] [
+					"" @ui-message <-
+					.Mode/input @ui-mode <-
+					":go " @ui-input ;append-string
+					$last-url @ui-input ;append-string
 					draw
 				]
 				[ 'f = ] [
@@ -759,7 +778,7 @@
 ])
 
 // TODO: handle https://, gopher://, etc (will need strfind("://"))
-// TODO: handle relative URLs
+// TODO: test with relative URLs
 (word parse-url (@U8 -- @U8) [
 	// TODO: ensure shadowing works correct, then rename this to "buf"
 	(let mybuf [U8 32])
