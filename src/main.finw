@@ -165,7 +165,7 @@
 		return
 	])
 
-	:value dup "Returned: " print-string print-dec nl @commands : (as @Command)
+	:value @commands : (as @Command)
 		:func -> do
 
 	@ui-input ;reset
