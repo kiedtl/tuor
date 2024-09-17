@@ -88,7 +88,7 @@
 	0xf2b5s .System/r deo
 	0xf2c5s .System/g deo
 	0xf3c6s .System/b deo
-	60s 8s * .Screen/width deo
+	100s 8s * .Screen/width deo
 	80s 8s * .Screen/height deo
 
 	"gemini://geminiprotocol.net/" make-request
@@ -107,11 +107,12 @@
 	"Tuor for Varvara (v0.1.0)" @ui-message <-
 ])
 
-(word parse-command (@U8 -- (Of std/MaybeFF U16)) [
-	move
+// ( string match-fully? -- index )
+(word parse-command (@U8 Bool -- (Of std/MaybeFF U16)) [
+	move move
 
 	(r copy) :0 -> ': <> (when [
-		"/dev/sda1 is on fire" std/panic
+		"unreachable: input not starting with ':'" std/panic
 	])
 	(r 1+)
 
@@ -122,21 +123,23 @@
 	//0 over-sb <-
 	//move
 
-	// ~~~// ( | command args )~~~
-	// ( | command )
+	// ~~~// ( | strict? command args )~~~
+	// ( | strict? command )
 
 	1s (until [ 0= ] [
 		1-
 		dup @commands : (as @Command)
 			:name ->
-			(r copy) std/strequ (when [
+			(r copy)
+			(r [ over-bs move ]) (when [ std/strequ ] [ std/strstartequ ])
+			(when [
 				(make (Of std/MaybeFF U16))
-				(r drop)
+				(r 2drop)
 				return
 			])
 	]) drop
 
-	(r drop)
+	(r 2drop)
 
 	0xFFFFs
 	(make (Of std/MaybeFF U16))
@@ -145,7 +148,7 @@
 (word process-command (--) [
 	@ui-input :buffer
 
-	parse-command
+	t parse-command
 	dup ;maybe-not? (when [
 		drop
 		@ui-input ;reset
@@ -308,6 +311,7 @@
 	draw-status
 	draw-clear-inputline
 	draw-message
+	draw-input-hint
 	draw-input
 ])
 
@@ -338,21 +342,40 @@
 		draw-string-nowrap
 ])
 
+(word draw-input-hint (--) [
+	@ui-input :len -> 1s <= (when [ return ])
+
+	@ui-input :buffer
+	nil parse-command
+	dup ;maybe-not? (when [
+		drop return
+	])
+
+	:value @commands : (as @Command)
+		:name ->
+
+	@assets/FONT-NORM @ui-current-font <-
+	0x02 @ui-current-style <-
+	ENDY 16s 2s * + .Screen/y deo
+	0s .Screen/x deo
+
+	': draw-char
+	draw-string-nowrap
+])
+
 (word draw-input (--) [
 	@assets/FONT-NORM @ui-current-font <-
 	0x01 @ui-current-style <-
-	ENDY 16s 2s * + .Screen/y deo
 
 	(let cursor-oldx U16)
 	(let cursor-oldy U16)
-	.Screen/x dei
-	.Screen/y dei
 	$cursor-oldx .Screen/x deo
 	$cursor-oldy .Screen/y deo
 	@assets/BLINKER .Screen/addr deo
 	0x40 .Screen/sprite deo
-	.Screen/y deo
-	.Screen/x deo
+
+	ENDY 16s 2s * + .Screen/y deo
+	0s .Screen/x deo
 
 	@ui-input :len -> 0= (when [ return ])
 
