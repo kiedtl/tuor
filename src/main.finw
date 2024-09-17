@@ -67,7 +67,7 @@
 (let commands [Command 2]) // XXX: ensure to update len in parse-command() also
 
 (let conn net/ConnectArgs)
-(let last-url @U8)
+(let history (Of vec/Vector @U8))
 (let buf (Of vec/Vector U8))
 (let document (Of vec/Vector Line))
 (let links (Of vec/Vector Link))
@@ -171,6 +171,22 @@
 	@ui-input ;reset
 ])
 
+(word history-prev (--) [
+	@history :len -> 1s = (when [
+		$ui-message -> 'N = (when [
+			"I said NO PREVIOUS PAGE" @ui-message <-
+		] [
+			"No previous page" @ui-message <-
+		])
+		return
+	])
+
+	@history ;pop drop
+	@history ;last
+	make-request
+	parse-buf
+])
+
 // TODO: factor out "first-non-space"
 //
 (word parse-buf ( -- ) [
@@ -243,8 +259,13 @@
 //
 // (link-url -- )
 (word goto (@U8 -- ) [
-	dup "http" std/strstartequ (when [
-		"Can't follow HTTP/S link" print-string nl
+	dup "http://" std/strstartequ (when [
+		"Can't follow http:// link" @ui-message <-
+		drop return
+	])
+
+	dup "https://" std/strstartequ (when [
+		"Can't follow https:// link" @ui-message <-
 		drop return
 	])
 
@@ -268,7 +289,12 @@
 (word make-request (@U8 -- ) [
 	0s @buf ;shrink-to
 
-	dup @last-url <-
+	dup
+		dup std/strlen 1+ dup alloc/get ;unwrap (as @U8)
+		move swap (r copy)
+		// ( len(url) url buf | buf )
+		std/memcpy drop
+		(r move) @history ;append
 	dup parse-url
 
 	@conn :host <-
@@ -294,6 +320,7 @@
 		"Error code: " print-string
 			.Net/status dei (as I8) print-dec
 			nl
+		0 .Net/close deo
 		return
 	])
 
@@ -305,6 +332,8 @@
 						@buf :len -> print-dec
 						" + 256 bytes)" print-string
 						nl
+				0 @buf :len -> 1- @buf :items -> + <-
+				0 .Net/close deo // TODO: break
 				return
 			])
 		1024s .Net/length deo
@@ -312,6 +341,7 @@
 		.Net/length dei @buf :len -> + @buf :len <-
 	])
 
+	0 @buf :len -> @buf :items -> + <-
 	0 .Net/close deo
 ])
 
@@ -689,11 +719,19 @@
 					': @ui-input ;insert
 					draw
 				]
+				[ 'h = ] [
+					history-prev
+					draw
+				]
+				//[ 'l = ] [
+				//	history-next
+				//	draw
+				//]
 				[ 'e = ] [
 					"" @ui-message <-
 					.Mode/input @ui-mode <-
 					":go " @ui-input ;append-string
-					$last-url @ui-input ;append-string
+					@history ;last @ui-input ;append-string
 					draw
 				]
 				[ 'f = ] [
