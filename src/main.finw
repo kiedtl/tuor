@@ -358,7 +358,7 @@
 	draw-status
 	draw-clear-inputline
 	draw-message
-	//draw-input-hint
+	draw-input-hint
 	draw-input
 ])
 
@@ -542,8 +542,7 @@
 					@assets/FONT-NORM @ui-current-font <-
 					0x03 @ui-current-style <-
 				]
-				// TODO: language: continue
-				// [ .LineType/status = ] [ continue ]
+				[ .LineType/status = ] [ drop drop rot> 1+ continue ]
 				[ drop ]
 			)
 
@@ -790,8 +789,6 @@
 
 					"LINK: " set-message
 					@ui-sel-link append-message
-					@ui-sel-link print-string nl
-					@ui-sel-link std/strlen print-dec nl
 
 					// Sequence is "complete" if first char is 0..9 or has two chars
 					@ui-sel-link (as @U8)
