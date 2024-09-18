@@ -85,9 +85,9 @@
 	256s @document ;init-sized
 	64s @links ;init-sized
 
-	0xf2b5s .System/r deo
-	0xf2c5s .System/g deo
-	0xf3c6s .System/b deo
+	0xe3b8s .System/r deo
+	0xe3a7s .System/g deo
+	0xe3a7s .System/b deo
 	100s 8s * .Screen/width deo
 	80s 8s * .Screen/height deo
 
@@ -383,7 +383,7 @@
 
 	@ui-message draw-string
 
-	0x02 @ui-current-style <-
+	0x03 @ui-current-style <-
 
 	$ui-mode .Mode/sel-link = (when [
 		"-- Press ESC to cancel -- " (as @U8)
@@ -534,10 +534,13 @@
 				]
 				[ .LineType/link = ] [
 					drop
+					@assets/FONT-FAT @ui-current-font <-
 					"[" draw-string
 					(let b @[U8 3])
 					dup :data -> (as U8) @b link-index-to-keyset draw-string
 					"] " draw-string
+					@assets/FONT-NORM @ui-current-font <-
+					0x03 @ui-current-style <-
 				]
 				// TODO: language: continue
 				// [ .LineType/status = ] [ continue ]
@@ -552,6 +555,9 @@
 			(cond
 				[ .LineType/heading = ] [
 					@assets/FONT-NORM @ui-current-font <-
+				]
+				[ .LineType/link = ] [
+					0x01 @ui-current-style <-
 				]
 			)
 			drop
