@@ -36,9 +36,9 @@
 	[heading  1]
 	[text     2]
 	[link     3]
-	// list
-	// quote
-	// pre
+	[list     4]
+	[quote    5]
+	[pre      6]
 )
 
 (struct Line
@@ -92,8 +92,8 @@
 	100s 8s * .Screen/width deo
 	80s 8s * .Screen/height deo
 
-	"gemini://geminiprotocol.net/" make-request
-	parse-buf
+	"gemini://geminiprotocol.net/docs/app-guide.gmi" make-request
+	parse-gemtext
 	draw
 
 	// TODO: allow quotes to be values; static struct literals in let() bindings
@@ -173,7 +173,7 @@
 // Parse command. **Modifies input buffer**
 //
 // ( string -- index )
-(word parse-command (@U8 Bool -- @U8 (Of std/MaybeFF U16)) [
+(word parse-command (@U8 -- @U8 (Of std/MaybeFF U16)) [
 	move
 
 	(r copy) :0 -> ': <> (when [
@@ -240,7 +240,7 @@
 (word process-command (--) [
 	@ui-input :buffer
 
-	t parse-command
+	parse-command
 	dup ;maybe-not? (when [
 		2drop
 		@ui-input ;reset
@@ -266,20 +266,29 @@
 	@history ;pop drop
 	@history ;last
 	make-request
-	parse-buf
+	parse-gemtext
 ])
 
 // TODO: factor out "first-non-space"
 //
-(word parse-buf ( -- ) [
+(word parse-gemtext ( -- ) [
 	0s @ui-scroll <-
 	0s @document ;shrink-to
 	0s @links ;shrink-to
 
+	(let pre Bool)
 	(let line-start @U8)
 
 	// (newline-addr -- )
 	(word process-line (@U8 -- ) [
+		$pre (when [
+			@document ;add-return move
+				(r copy) :line <-
+				.LineType/pre   (r copy) :type <-
+				0s (as @Opaque) (r move) :data <-
+			return
+		])
+
 		// Change the newline to a NUL
 		0 swap-sb <-
 		$line-start
@@ -317,6 +326,23 @@
 				@links :len -> 1- (as @Opaque)
 				.LineType/link
 			]
+			[ "* " std/strstartequ ] [
+				// Move past "* " and spacing
+				1+ 1+
+				(while [ (-- Bool) ldak is-whitespace ] [ 1+ ])
+				0s (as @Opaque) .LineType/list
+			]
+			[ -> '> = ] [
+				// Move past ">" and spacing
+				 1+
+				(until [ (-- Bool) ldak 0x20 <> ] [ 1+ ])
+				0s (as @Opaque) .LineType/quote
+			]
+			[ "```" std/strstartequ ] [
+				drop
+				$pre not @pre <-
+				return
+			]
 			[ 0s (as @Opaque) .LineType/text ]
 		)
 		@document ;add-return move
@@ -324,6 +350,8 @@
 			(r copy) :data <-
 			(r move) :line <-
 	])
+
+	nil @pre <-
 
 	@buf :items ->
 	dup @line-start <-
@@ -363,7 +391,7 @@
 
 	alloc/defrag
 	make-request
-	parse-buf
+	parse-gemtext
 ])
 
 // ( url -- )
@@ -616,6 +644,19 @@
 					@assets/FONT-NORM @ui-current-font <-
 					0x03 @ui-current-style <-
 				]
+				[ .LineType/list = ] [
+					drop
+					0xA5 draw-char 0x20 draw-char
+				]
+				[ .LineType/quote = ] [
+					drop
+					'> draw-char 0x20 draw-char
+					0x03 @ui-current-style <-
+				]
+				[ .LineType/pre = ] [
+					drop
+					@assets/FONT-MONO @ui-current-font <-
+				]
 				[ .LineType/status = ] [ drop drop rot> 1+ continue ]
 				[ drop ]
 			)
@@ -631,6 +672,12 @@
 				]
 				[ .LineType/link = ] [
 					0x01 @ui-current-style <-
+				]
+				[ .LineType/quote = ] [
+					0x01 @ui-current-style <-
+				]
+				[ .LineType/pre = ] [
+					@assets/FONT-MONO @ui-current-font <-
 				]
 			)
 			drop
