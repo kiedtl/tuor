@@ -65,6 +65,7 @@
 (let ui-cur-line U16)
 
 (let commands [Command 3]) // XXX: ensure to update len in parse-command() also
+(word COMMANDS-LEN (-- U16) [ 3s ])
 
 (let conn net/ConnectArgs)
 (let history (Of vec/Vector @U8))
@@ -169,9 +170,11 @@
 	dup std/strlen 1+ swap @ui-message std/memcpy drop
 ])
 
-// ( string match-fully? -- index )
+// Parse command. **Modifies input buffer**
+//
+// ( string -- index )
 (word parse-command (@U8 Bool -- @U8 (Of std/MaybeFF U16)) [
-	move move
+	move
 
 	(r copy) :0 -> ': <> (when [
 		"unreachable: input not starting with ':'" std/panic
@@ -187,20 +190,48 @@
 
 	// ( args | strict? command )
 
-	3s (until [ 0= ] [
+	COMMANDS-LEN (until [ 0= ] [
 		1-
 		dup @commands : (as @Command)
 			:name ->
-			(r copy)
-			(r [ over-bs move ]) (when [ std/strequ ] [ std/strstartequ ])
+			(r copy) std/strequ
 			(when [
 				(make (Of std/MaybeFF U16))
-				(r 2drop)
+				(r drop)
 				return
 			])
 	]) drop
 
-	(r 2drop)
+	(r drop)
+
+	0xFFFFs
+	(make (Of std/MaybeFF U16))
+])
+
+// Find command that might match input, for hinting
+//
+// ( string -- index )
+(word match-command (@U8 -- (Of std/MaybeFF U16)) [
+	move
+
+	(r copy) :0 -> ': <> (when [
+		"unreachable: input not starting with ':'" std/panic
+	])
+	(r 1+)
+
+	COMMANDS-LEN (until [ 0= ] [
+		1-
+		dup @commands : (as @Command)
+			:name ->
+			(r copy) std/strstartequ
+			(when [
+				(make (Of std/MaybeFF U16))
+				(r drop)
+				return
+			])
+	]) drop
+
+	(r drop)
 
 	0xFFFFs
 	(make (Of std/MaybeFF U16))
@@ -401,7 +432,7 @@
 	draw-status
 	draw-clear-inputline
 	draw-message
-	//draw-input-hint
+	draw-input-hint
 	draw-input
 ])
 
@@ -442,7 +473,7 @@
 	@ui-input :len -> 1s <= (when [ return ])
 
 	@ui-input :buffer
-	nil parse-command nip
+	match-command
 	dup ;maybe-not? (when [
 		drop return
 	])
