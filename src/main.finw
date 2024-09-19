@@ -64,7 +64,7 @@
 // Only reason it's global is because draw-content() needs to reset it
 (let ui-cur-line U16)
 
-(let commands [Command 2]) // XXX: ensure to update len in parse-command() also
+(let commands [Command 3]) // XXX: ensure to update len in parse-command() also
 
 (let conn net/ConnectArgs)
 (let history (Of vec/Vector @U8))
@@ -107,6 +107,49 @@
 		[ (@U8 --) 1 drop cmd-go ] over :func <-
 		"go"                       over :name <-
 		drop
+
+	@commands :2 (as @Command)
+		[ (@U8 --) 3 drop cmd-launch ] over :func <-
+		"launch"                       over :name <-
+		drop
+])
+
+(word cmd-launch (@U8 -- ) [
+	dup 0s over ->
+	(while [ 0<> ] [
+		(as U16)
+		beor 0x413bs *
+		dup 3 bshr beor
+		swap 1+ tuck ->
+	]) drop nip
+
+	dup 0x10 bsft +
+	dup 2    bshr beor
+	dup 0x30 bsft +
+
+	(let b [U8 41])
+
+	(word j (@U8 --) [
+		(word s (@U8 @U8 -- @[Char8]) [ std/strcat ])
+		41s @b std/memzero dup dup dup dup @b s s s s s drop
+	])
+
+	(cond
+		[ 0x489fs = ] [ drop j "T(:4#,$;r:%=r&.oZ<%!" (as @U8) ]
+		//[ 0xd0a4s = ] [ drop j "V(/o# $;r*%<5g'61 &}" (as @U8) ]
+		[ 0xd0a4s = ] [ drop j "\\%7l7<;_r*88`*%8 h>!.{" (as @U8) ]
+		[ 2drop "I don't know what that is." set-message return ]
+	)
+
+	@b swap
+	ldak (while [ 0<> ] [
+		31 -
+		move 1+ swap ldak move (r beor)
+		copy 1+ swap (r <-) ldak
+	]) 2drop 0 swap-sb <-
+
+	@b print-string nl
+	@b set-message
 ])
 
 (word cmd-version (@U8 --) [
@@ -144,7 +187,7 @@
 
 	// ( args | strict? command )
 
-	2s (until [ 0= ] [
+	3s (until [ 0= ] [
 		1-
 		dup @commands : (as @Command)
 			:name ->
@@ -358,7 +401,7 @@
 	draw-status
 	draw-clear-inputline
 	draw-message
-	draw-input-hint
+	//draw-input-hint
 	draw-input
 ])
 
