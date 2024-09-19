@@ -1,0 +1,14 @@
+Roadmap
+=======
+- :launch
+- Look into history forwards feature
+- Mouse
+  - Click input line to move cursor
+  - Scroll
+  - Click input line to edit URL
+  - Click link
+
+Polishing
+=========
+
+- Validate arg length -- print usage if too many (or too few) args
