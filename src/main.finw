@@ -677,7 +677,7 @@
 					0x01 @ui-current-style <-
 				]
 				[ .LineType/pre = ] [
-					@assets/FONT-MONO @ui-current-font <-
+					@assets/FONT-NORM @ui-current-font <-
 				]
 			)
 			drop
