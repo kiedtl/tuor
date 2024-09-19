@@ -535,7 +535,20 @@
 	@ui-input :len -> 0= (when [ return ])
 
 	@ui-input :cursor -> @ui-input :buffer + 1-
-	@ui-input :buffer
+
+	// "Scroll" buffer to where it'll fit in the window (32px space margin)
+	//
+	// Do this by starting at the cursor, then going backwards while recording
+	// the cumulative width until it exceeds the viewport size.
+	//
+	(r [ .Screen/width dei 32s - 0s ])
+	@ui-input :cursor -> @ui-input :buffer + 1-
+	(while [ @ui-input :buffer <> (r [ 2dup > move ]) and ] [
+		"hi" print nl
+		ldak measure-char move (r +)
+		1-
+	]) (r 2drop)
+
 	ldak
 	(while [ 0<> ] [
 		draw-char
@@ -820,11 +833,14 @@
 	(r 0s)
 	ldak
 	(while [ 0<> ] [
-		(as U16)
-		$ui-current-font + -> (as U16) move (r +)
+		measure-char move (r +)
 		1+ ldak
 	]) 2drop
 	(r move)
+])
+
+(word measure-char (U8 -- U16) [
+	(as U16) $ui-current-font + -> (as U16)
 ])
 
 (word draw-mouse ( -- ) [
