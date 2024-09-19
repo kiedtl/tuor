@@ -613,6 +613,10 @@
 	@document :len ->
 	0s
 	(until [ (U16 U16 -- Bool) = ] [
+		.Screen/y dei .Screen/height dei > (when [
+			break
+		])
+
 		// items len ind
 		rot 2dup :
 		// len ind items ptr
