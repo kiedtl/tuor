@@ -92,7 +92,7 @@
 	100s 8s * .Screen/width deo
 	80s 8s * .Screen/height deo
 
-	"gemini://geminiprotocol.net/docs/app-guide.gmi" make-request
+	"gemini://geminiprotocol.net/" make-request
 	parse-gemtext
 	draw
 
@@ -590,7 +590,9 @@
 
 	(let numstr [U8 4])
 	0 4s @numstr std/memset8
-	$ui-scroll 100s * $ui-cur-line /
+	$ui-cur-line 0<> (when [
+		$ui-scroll 100s * $ui-cur-line /
+	] [ 0s ])
 		@numstr std/itoa10
 
 	// Padding
@@ -639,6 +641,10 @@
 
 	// clear
 	0b10000000 .Screen/pixel deo
+
+	// Should never happen in practice, as the return Gemini status will
+	// always be one line
+	@document :len -> 0= (when [ return ])
 
 	@document :items ->
 	@document :len ->
