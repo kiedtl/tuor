@@ -1,4 +1,4 @@
-// TODO: need for dummy values when using while loop with nothing
+// TODO: Finwe: need for dummy values when using while loop with nothing
 // on the stack (compiler crashes otherwise)
 //
 // 0 // dummy value
@@ -43,7 +43,7 @@
 
 (struct Line
 	[type LineType]
-	[data  @Opaque] // TODO: untagged unions
+	[data  @Opaque] // TODO: Finwe: untagged unions
 	[line      @U8]
 )
 
@@ -57,7 +57,7 @@
 (let ui-current-font @U8)
 (let ui-current-style U8)
 (let ui-scroll U16)
-(let ui-input input/Ctx) // TODO: ensure $ui-input :cursor is optimized to single LDA
+(let ui-input input/Ctx) // TODO: Finwe: ensure $ui-input :cursor is optimized to single LDA
 (let ui-message [U8 128])
 
 // Per-render state for draw-next-line
@@ -75,7 +75,7 @@
 
 (word main ( -- ) [
 	[ (--) on-mouse      halt ] .Mouse/vector deo
-	[ (--) on-controller halt ] .Controller/vector deo // TODO: bad folding!
+	[ (--) on-controller halt ] .Controller/vector deo // TODO: Finwe: bad folding!
 
 	.Mode/norm @ui-mode <-
 	@ui-input ;reset
@@ -96,9 +96,9 @@
 	parse-gemtext
 	draw
 
-	// TODO: allow quotes to be values; static struct literals in let() bindings
-	// TODO: allow quotes with only one value in them to skip arity
-	// TODO: fix folding issue already and remove 2 drop etc
+	// TODO: Finwe: allow quotes to be values; static struct literals in let() bindings
+	// TODO: Finwe: allow quotes with only one value in them to skip arity
+	// TODO: Finwe: fix folding issue already and remove 2 drop etc
 	@commands :0 (as @Command)
 		[ (@U8 --) 2 drop cmd-version ] over :func <-
 		"version"                       over :name <-
@@ -127,7 +127,7 @@
 
 (word cmd-quit (@U8 -- ) [
 	drop
-	// TODO: std/exit
+	// TODO: Finwe: std/exit
 	0x80 .System/state deo
 	halt
 ])
@@ -328,7 +328,7 @@
 				// Separate URL and text
 				dup
 				(until [ (-- Bool) ldak is-whitespace ] [ 1+ ])
-				dup 0 swap-sb <- // TODO: optimize <value> <swap-sb> <-
+				dup 0 swap-sb <- // TODO: Finwe: optimize <value> <swap-sb> <-
 				                 // to (r val) move (r <-)
 				1+
 
@@ -648,13 +648,13 @@
 		// items len ind
 		rot 2dup :
 		// len ind items ptr
-		(as @Line) // FIXME: shouldn't be necessary, : should cast for us
+		(as @Line) // TODO: Finwe: shouldn't be necessary, : should cast for us
 		dup :type ->
 			(cond
 				[ .LineType/heading = ] [
 					@assets/FONT-FAT @ui-current-font <-
 
-					// TODO: optimize: if every cond branch body starts
+					// TODO: Finwe: optimize: if every cond branch body starts
 					// with "DROP", then dup'ing isn't necessary for last
 					// branch
 					//
@@ -778,7 +778,7 @@
 			.Screen/x dei @last-space-screenx <-
 		])
 
-		// TODO: allow '\n' and '\t' literal
+		// TODO: Finwe: allow '\n' and '\t' literal
 		(cond
 			[ 0x0A = ] [ drop draw-next-line ]
 			[ 0x09 = ] [ drop 0x20 draw-char ]
@@ -799,8 +799,8 @@
 	]) 2drop
 ])
 
-// TODO: optimize when cond bodies are the same
-// TODO: (or) builtin
+// TODO: Finwe: optimize when cond bodies are the same
+// TODO: Finwe: (or) builtin
 (word is-whitespace (Char8 -- Bool) [
 	// TODO: uncomment and test, should work
 	// (too lazy to test now, in middle of other things)
@@ -875,7 +875,7 @@
 	0x41 .Screen/sprite deo
 ])
 
-// TODO: switch statements already!! Why do I need to `drop` each time?
+// TODO: Finwe: switch statements already!! Why do I need to `drop` each time?
 #inline
 (word on-controller ( -- ) [
 	$ui-mode
@@ -1068,7 +1068,7 @@
 	(r move)
 ])
 (test link-index-to-keyset [
-	(let b [U8 3]) // TODO: test shadowing and rename to buf
+	(let b [U8 3]) // TODO: Finwe: test shadowing and rename to buf
 	 0 @b link-index-to-keyset print-string (should stdout-eq "0")
 	 5 @b link-index-to-keyset print-string (should stdout-eq "5")
 	25 @b link-index-to-keyset print-string (should stdout-eq "b5")
