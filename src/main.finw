@@ -457,9 +457,8 @@
 						@buf :len -> print-dec
 						" + 256 bytes)" print-string
 						nl
-				0 @buf :len -> 1- @buf :items -> + <-
-				0 .Net/close deo // TODO: break
-				return
+				"Couldn't load page (out of memory)" set-message
+				break
 			])
 		1024s .Net/length deo
 		@buf :len -> @buf :items -> + .Net/recv deo
@@ -768,7 +767,7 @@
 
 				draw-next-line
 
-				// TODO: continue
+				// Continue on
 				drop ldak
 			])
 
