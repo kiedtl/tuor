@@ -295,19 +295,22 @@
 	(let pre Bool)
 	(let line-start @U8)
 
-	// (newline-addr -- )
-	(word process-line (@U8 -- ) [
+	(word process-line (--) [
+		$line-start
+
 		$pre (when [
-			@document ;add-return move
-				(r copy) :line <-
-				.LineType/pre   (r copy) :type <-
-				0s (as @Opaque) (r move) :data <-
+			dup "```" std/strequ (when [
+				nil @pre <-
+				drop
+			] [
+				@document ;add-return move
+					(r copy) :line <-
+					.LineType/pre   (r copy) :type <-
+					0s (as @Opaque) (r move) :data <-
+			])
 			return
 		])
 
-		// Change the newline to a NUL
-		0 swap-sb <-
-		$line-start
 		(cond
 			[ (-- Bool) @document :len -> 0= ] [
 				0s (as @Opaque) .LineType/status
@@ -356,7 +359,7 @@
 			]
 			[ "```" std/strstartequ ] [
 				drop
-				$pre not @pre <-
+				t @pre <-
 				return
 			]
 			[ 0s (as @Opaque) .LineType/text ]
@@ -374,7 +377,8 @@
 	ldak
 	(while [ 0<> ] [
 		0x0A = (when [
-			dup process-line
+			dup 0 swap-sb <- // NL -> NUL
+			process-line
 			dup 1+ @line-start <-
 		])
 		1+ ldak
