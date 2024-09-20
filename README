@@ -1,0 +1,27 @@
+Tuor
+====
+
+Tuor is a basic Gemini client for Varvara, written in Finwë. It was created to
+demonstrate Finwë's `Net` device extension.
+
+Building
+--------
+
+You will need `Finwë` installed.
+
+    $ finwe src/main.finw -x tuor.rom
+
+Limitations
+-----------
+
+* Tuor, being a Varvara ROM, is memory-constrained and will fail to load large
+  webpages.
+* No multi-tab support.
+* No automatic redirections.
+* Errors may not be displayed properly.
+* Client certifications and user input are not supported.
+* No support for Gopher.
+
+All this will *eventually* be worked on (see the TODO). For now, the priority is
+to polish the `Net` device and work on the shortcomings in Finwë which Tuor has
+surfaced.
