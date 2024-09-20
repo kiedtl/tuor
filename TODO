@@ -1,14 +1,29 @@
 Roadmap
 =======
-- :launch
+x :launch
+- Handle other status codes
+  - 1*: Inputs, :input command
+  - 3*: Automatic redirects
+  - 4*, 5*: Show <META> as text
+  - 6*: Certificates, :cert command
+- Handle connection failures
+- Read buffer into alternate memory bank
+x :wq, :q, g
+
+Roadmap v2
+==========
+- Gopher
+- Use multiple memory banks as "tabs"
+  - :newgo, F keybind (link follow)
 - Look into history forwards feature
 - Mouse
   - Click input line to move cursor
   - Scroll
   - Click input line to edit URL
   - Click link
+- :help command
+- G keybind
 
 Polishing
 =========
-
 - Validate arg length -- print usage if too many (or too few) args

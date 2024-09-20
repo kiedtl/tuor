@@ -64,8 +64,8 @@
 // Only reason it's global is because draw-content() needs to reset it
 (let ui-cur-line U16)
 
-(let commands [Command 3]) // XXX: ensure to update len in parse-command() also
-(word COMMANDS-LEN (-- U16) [ 3s ])
+(let commands [Command 5]) // XXX: ensure to update len in parse-command() also
+(word COMMANDS-LEN (-- U16) [ 5s ])
 
 (let conn net/ConnectArgs)
 (let history (Of vec/Vector @U8))
@@ -113,6 +113,23 @@
 		[ (@U8 --) 3 drop cmd-launch ] over :func <-
 		"launch"                       over :name <-
 		drop
+
+	@commands :3 (as @Command)
+		[ (@U8 --) 4 drop cmd-quit ] over :func <-
+		"q"                          over :name <-
+		drop
+
+	@commands :4 (as @Command)
+		[ (@U8 --) 5 drop cmd-quit ] over :func <-
+		"wq"                         over :name <-
+		drop
+])
+
+(word cmd-quit (@U8 -- ) [
+	drop
+	// TODO: std/exit
+	0x80 .System/state deo
+	halt
 ])
 
 (word cmd-launch (@U8 -- ) [
@@ -149,7 +166,6 @@
 		copy 1+ swap (r <-) ldak
 	]) 2drop 0 swap-sb <-
 
-	@b print-string nl
 	@b set-message
 ])
 
@@ -544,7 +560,6 @@
 	(r [ .Screen/width dei 32s - 0s ])
 	@ui-input :cursor -> @ui-input :buffer + 1-
 	(while [ @ui-input :buffer <> (r [ 2dup > move ]) and ] [
-		"hi" print nl
 		ldak measure-char move (r +)
 		1-
 	]) (r 2drop)
@@ -871,6 +886,12 @@
 				[ 0x0d = ] [
 					"" set-message
 				]
+				[ 'g = ] [
+					0s @ui-scroll <-
+				]
+				//[ 'G = ] [
+				//	@document :len -> @ui-scroll <-
+				//]
 				[ ': = ] [
 					"" set-message
 					.Mode/input @ui-mode <-
