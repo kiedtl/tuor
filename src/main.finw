@@ -280,8 +280,8 @@
 		return
 	])
 
-	@history ;pop drop
-	@history ;last
+	@history ;pop drop // Pop off current URL
+	@history ;pop // Pop off previous too, because make-request will add it back
 	make-request
 	parse-gemtext
 ])
@@ -435,6 +435,17 @@
 		std/memcpy drop
 		(r move) @history ;append
 	dup parse-url
+
+	// Debugging code, might be handy when adding forwards-history :P
+	//
+	//"HISTORY: " print-string @history :len -> print-dec nl
+	//@history ;last-ptr 2s + (as @@U8)
+	//(until [ @history :items -> = ] [
+	//	2s - (as @@U8)
+	//	"- " print-string ldak print-string nl
+	//])
+	//"END" print-string nl nl
+	//drop
 
 	@conn :host <-
 	t @conn :tls? <-
