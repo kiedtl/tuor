@@ -403,8 +403,17 @@
 	dup "gemini://" std/strstartequ not (when [
 		(let urlbuf [U8 64])
 		0 64s @urlbuf std/memset8
-		"gemini://" @urlbuf std/strcat
-		@conn :host -> swap std/strcat
+
+		// Append either host or last entire URL
+		dup :0 -> '/ = (when [
+			"gemini://" @urlbuf std/strcat
+			@conn :host -> swap std/strcat
+		] [
+			@history ;last @urlbuf std/strcat
+			// Now we need to find the last slash and truncate to that point.
+			(while [ (-- Bool) ldak '/ <> ] [ 1- ])
+		])
+
 		"/" swap std/strcat
 		std/strcat drop
 		@urlbuf (as @U8)
@@ -608,9 +617,6 @@
 	"(" draw-string
 	@assets/FONT-EMPH @ui-current-font <-
 	@document :items -> :0 (as @Line) :line ->
-		// Move past first word in status (e.g. "20 text/gemini")
-		(until [ (-- Bool) ldak is-whitespace     ] [ 1+ ]) // ...Past first word,
-		1+ // Past space that follows after.
 		draw-string
 	")" draw-string
 
