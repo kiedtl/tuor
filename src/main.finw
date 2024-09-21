@@ -93,6 +93,7 @@
 	80s 8s * .Screen/height deo
 
 	"gemini://geminiprotocol.net/" make-request
+	//"gopher://colorfield.space/" make-request
 	parse-gemtext
 	draw
 
@@ -427,15 +428,15 @@
 	dup parse-url
 
 	@conn :host <-
+	t @conn :tls? <-
 	1965s @conn :port <-
 	@conn .Net/connect deo
 
 	.Net/status dei .Status/ok <> (when [
 		drop
-		"Connection failed!" print-string nl
-		"Error code: " print-string
-			.Net/status dei (as I8) print-dec
-			nl
+		"Connection failed! (error: " set-message
+			.Net/status dei (as net/Status) ;to-string append-message
+		")" append-message
 		return
 	])
 
@@ -445,10 +446,8 @@
 		"\r\n" .Net/send deo
 
 	.Net/status dei .Status/ok <> (when [
-		"Request failed!" print-string nl
-		"Error code: " print-string
-			.Net/status dei (as I8) print-dec
-			nl
+		"Request failed! (error: " set-message
+			.Net/status dei (as net/Status) ;to-string append-message
 		0 .Net/close deo
 		return
 	])
@@ -1033,7 +1032,9 @@
 	(let mybuf [U8 32])
 
 	// First move past the gemini://, if it's there
-	dup "gemini://" std/strstartequ (when [
+	dup "gemini://" std/strstartequ move
+	dup "gopher://" std/strstartequ (r move) or
+	(when [
 		ldak
 		(until [ '/ = ] [
 				drop 1+ ldak
